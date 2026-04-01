@@ -1,0 +1,37 @@
+version: '3.8'  # Always good to include version
+
+services:
+  rightpath:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: default
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/rightpath?createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: Malli@2790
+    depends_on:
+      - mysql
+    networks:
+      - restaurant
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: Malli@2790
+      MYSQL_DATABASE: rightpath
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - restaurant
+
+volumes:
+  mysql_data:
+
+networks:
+  restaurant:
+    name: restaurant
+    external: false  # Set to false if you want Docker Compose to manage the network

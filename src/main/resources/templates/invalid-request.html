@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invalid Request</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #fafafa;
+            color: #333;
+            text-align: center;
+            padding-top: 80px;
+        }
+        .error-box {
+            display: inline-block;
+            border: 2px solid #d9534f;
+            border-radius: 8px;
+            padding: 30px 50px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #d9534f;
+        }
+        p {
+            font-size: 16px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+<div class="error-box">
+    <h1>Invalid Request</h1>
+    <p>Multiple or missing Host header detected.</p>
+    <p>Please ensure your request is sent from a valid source.</p>
+</div>
+</body>
+</html>
