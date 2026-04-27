@@ -1,5 +1,6 @@
 package com.rightpath.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,11 +13,11 @@ import com.rightpath.enums.InterviewResult;
 
 public interface InterviewService {
 
-	CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
-			LocalDateTime deadlineTime);
-
-	List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, java.util.List<String> emails,
-			LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail);
+//	CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
+//			LocalDateTime deadlineTime);
+//
+//	List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, java.util.List<String> emails,
+//			LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail);
 
 	List<CandidateInterviewSchedule> getActiveInterviewsByEmail(String email);
 
@@ -39,5 +40,22 @@ public interface InterviewService {
 
 	String answer(Long interviewScheduleId, String answerText, boolean finalAnswer, String jobPrefix,
 			String codeContent, String codeLanguage);
+
+//	String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId, Long fromDate,
+//			Long toDate);
+
+//	List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
+//			LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail, LocalDateTime questionsFromDate,
+//			LocalDateTime questionsToDate);
+//
+//	CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
+//			LocalDateTime deadlineTime, LocalDateTime questionsFromDate, LocalDateTime questionsToDate);
+	
+	  CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
+	            LocalDateTime deadlineTime, LocalDate questionsFromDate, LocalDate questionsToDate);
+	    
+	    List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
+	            LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
+	            LocalDate questionsFromDate, LocalDate questionsToDate);
 
 }

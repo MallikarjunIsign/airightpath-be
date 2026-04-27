@@ -57,7 +57,8 @@ public class ApiJwtAuthenticationFilter extends OncePerRequestFilter {
                 || path.equals("/api/refresh")
                 || path.equals("/api/logout")
                 || path.equals("/api/health")
-                || path.equals("/api/healthcheck");
+                || path.equals("/api/healthcheck")
+        || path.startsWith("/api/mobile/");
     }
 
     @Override

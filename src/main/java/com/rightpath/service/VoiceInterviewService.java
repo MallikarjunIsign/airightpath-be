@@ -21,4 +21,6 @@ public interface VoiceInterviewService {
     VoiceEvaluationResult getEvaluation(Long scheduleId);
 
     ResumeResponse resumeInterview(Long scheduleId);
+
+	VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate);
 }

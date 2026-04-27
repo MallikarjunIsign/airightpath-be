@@ -53,6 +53,11 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+		    <groupId>software.amazon.awssdk</groupId>
+		    <artifactId>rekognition</artifactId>
+		    <version>2.29.15</version>
+		</dependency>
+		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<version>${lombok.version}</version>
@@ -138,9 +143,9 @@
     <artifactId>spring-boot-starter-webflux</artifactId>
 </dependency>
 <dependency>
-	<groupId>software.amazon.awssdk</groupId>
-	<artifactId>s3</artifactId>
-	<version>2.25.26</version>
+    <groupId>software.amazon.awssdk</groupId>
+    <artifactId>s3</artifactId>
+    <version>2.29.15</version>
 </dependency>
 <dependency>
     <groupId>org.springframework.boot</groupId>

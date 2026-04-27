@@ -15,4 +15,6 @@ public class StartInterviewRequest {
 	@Column(nullable = false)
 	private String jobPrefix;
 	private String resumeSummary;
+	 private Long fromDate;   // optional – Unix epoch milliseconds
+	 private Long toDate;     // optional – Unix epoch milliseconds
 }

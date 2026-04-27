@@ -1,5 +1,6 @@
 package com.rightpath.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.rightpath.entity.CandidateInterviewSchedule;
@@ -26,6 +27,8 @@ public class CandidateInterviewScheduleDTO {
 	private String evaluationJson;
 	private LocalDateTime startedAt;
 	private LocalDateTime endedAt;
+	   private LocalDate questionsFromDate;
+	    private LocalDate questionsToDate;
 
 	public CandidateInterviewScheduleDTO(CandidateInterviewSchedule entity) {
 		this.id = entity.getId();

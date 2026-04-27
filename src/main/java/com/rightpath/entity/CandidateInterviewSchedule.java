@@ -55,6 +55,12 @@ public class CandidateInterviewSchedule {
 	@ToString.Exclude
 	@EqualsAndHashCode.Exclude
 	private JobPost jobPost;
+	
+	@Column(name = "questions_from_date")
+	private LocalDateTime questionsFromDate;
+
+	@Column(name = "questions_to_date")
+	private LocalDateTime questionsToDate;
 
 	@Enumerated(EnumType.STRING)
 	private AttemptStatus attemptStatus;

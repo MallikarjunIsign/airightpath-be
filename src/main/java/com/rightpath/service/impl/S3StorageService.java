@@ -117,4 +117,19 @@ public class S3StorageService implements StorageService {
             throw new IllegalArgumentException("File must not be null or empty");
         }
     }
+    
+    @Override
+    public void uploadStringContent(String prefix, String fileName, String content) {
+        validateInputs(prefix, fileName);
+        try {
+            String key = prefix + "/" + fileName;
+            PutObjectRequest putReq = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+            s3Client.putObject(putReq, RequestBody.fromString(content));
+        } catch (S3Exception e) {
+            throw new StorageException("Failed to upload string content to S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
+        }
+    }
 }

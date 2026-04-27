@@ -12,5 +12,6 @@ public interface StorageService {
 
 	boolean fileExists(String containerName, String fileName);
 
+	void uploadStringContent(String prefix, String fileName, String content);
 	 
 }

@@ -1,6 +1,7 @@
 package com.rightpath.controller;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -19,8 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.AssignInterviewBulkDTO;
+import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.CandidateInterviewScheduleDTO;
 import com.rightpath.dto.InterviewStatsDTO;
 import com.rightpath.dto.StartInterviewRequest;
@@ -71,28 +72,37 @@ public class InterviewController {
 	@PostMapping("/assign-interview")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<?> assignInterview(@RequestBody AssignInterviewDTO dto) {
-
-		CandidateInterviewSchedule schedule = interviewService.assignInterview(dto.getJobPrefix(), dto.getEmail(),
-				dto.getAssignedAt(), dto.getDeadlineTime());
-
-		return ResponseEntity.ok(new CandidateInterviewScheduleDTO(schedule));
+	    CandidateInterviewSchedule schedule = interviewService.assignInterview(
+	            dto.getJobPrefix(), 
+	            dto.getEmail(),
+	            dto.getAssignedAt(), 
+	            dto.getDeadlineTime(),
+	            dto.getQuestionsFromDate(),
+	            dto.getQuestionsToDate()
+	    );
+	    return ResponseEntity.ok(new CandidateInterviewScheduleDTO(schedule));
 	}
 
 	@PostMapping("/assign-interview-bulk")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<?> assignInterviewBulk(@RequestBody AssignInterviewBulkDTO dto) {
+	    LocalDateTime assignedAt = dto.getAssignedAt() != null ? dto.getAssignedAt() : LocalDateTime.now();
 
-		java.time.LocalDateTime assignedAt = dto.getAssignedAt() != null ? dto.getAssignedAt()
-				: java.time.LocalDateTime.now();
+	    List<CandidateInterviewSchedule> schedules = interviewService.assignInterviewBulk(
+	            dto.getJobPrefix(),
+	            dto.getEmails(),
+	            assignedAt,
+	            dto.getDeadlineTime(),
+	            dto.isSendEmail(),
+	            dto.getQuestionsFromDate(),  // LocalDate
+	            dto.getQuestionsToDate()     // LocalDate
+	    );
 
-		java.util.List<com.rightpath.entity.CandidateInterviewSchedule> schedules = interviewService
-				.assignInterviewBulk(dto.getJobPrefix(), dto.getEmails(), assignedAt, dto.getDeadlineTime(),
-						dto.isSendEmail());
+	    List<CandidateInterviewScheduleDTO> results = schedules.stream()
+	            .map(CandidateInterviewScheduleDTO::new)
+	            .toList();
 
-		java.util.List<CandidateInterviewScheduleDTO> results = schedules.stream()
-				.map(CandidateInterviewScheduleDTO::new).toList();
-
-		return ResponseEntity.ok(results);
+	    return ResponseEntity.ok(results);
 	}
 
 	@GetMapping("/results")
@@ -178,10 +188,15 @@ public class InterviewController {
 	@PostMapping("/voice/start")
 	@PreAuthorize("hasAuthority('INTERVIEW_START')")
 	public ResponseEntity<VoiceStartResponse> startVoiceInterview(@RequestBody StartInterviewRequest req) {
-		VoiceStartResponse response = voiceInterviewService.startVoiceInterview(req.getJobPrefix(), req.getEmail());
-		return ResponseEntity.ok(response);
+	    VoiceStartResponse response = voiceInterviewService.startVoiceInterview(
+	            req.getJobPrefix(),
+	            req.getEmail(),
+	            req.getFromDate(),
+	            req.getToDate());
+	    return ResponseEntity.ok(response);
 	}
-
+	
+	
 	@PostMapping("/voice/{id}/end")
 	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
 	public ResponseEntity<?> endVoiceInterview(@PathVariable Long id) {
@@ -318,6 +333,7 @@ public class InterviewController {
 	            Map.of("message", "Interview questions uploaded successfully")
 	    );
 	}
+	
 
 	@GetMapping("/questions")
 	@PreAuthorize("hasAuthority('INTERVIEW_START')")
@@ -326,5 +342,25 @@ public class InterviewController {
 	    String data = interviewQuestionsService.fetchInterviewQuestions(jobPrefix);
 
 	    return ResponseEntity.ok(data);
+	}
+
+	
+	
+	@PostMapping("/update-questions/{jobPrefix}")
+	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
+	public ResponseEntity<?> updateInterviewQuestions(
+	        @PathVariable String jobPrefix,
+	        @RequestParam(required = false) List<String> categories,
+	        @RequestParam(required = false) Integer totalQuestions) {
+
+	    if (categories == null || categories.isEmpty()) {
+	        categories = List.of("OOP", "ExceptionHandling", "Multithreading", "Collections",
+	                "Java8", "JVM", "I_O", "Generics", "DesignPatterns", "JDBC");
+	    }
+	    if (totalQuestions == null || totalQuestions <= 0) {
+	        totalQuestions = 100;
+	    }
+	    interviewQuestionsService.updateInterviewQuestionsWithAI(jobPrefix, categories, totalQuestions);
+	    return ResponseEntity.ok(Map.of("message", "Interview questions updated successfully"));
 	}
 }

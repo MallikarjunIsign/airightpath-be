@@ -1,6 +1,9 @@
 package com.rightpath.service.impl;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -270,63 +273,82 @@ public class InterviewServiceImpl implements InterviewService {
 	
 	@Override
 	public CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
-			LocalDateTime deadlineTime) {
+	        LocalDateTime deadlineTime, LocalDate questionsFromDate, LocalDate questionsToDate) {
 
-		JobApplicationForCandidate application = jobAppRepo.findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
-				.orElseThrow(() -> new RuntimeException("Application not found"));
+	    JobApplicationForCandidate application = jobAppRepo.findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
+	            .orElseThrow(() -> new RuntimeException("Application not found"));
 
-		application.setInterview("Scheduled");
-		jobAppRepo.save(application);
+	    application.setInterview("Scheduled");
+	    jobAppRepo.save(application);
 
-		CandidateInterviewSchedule schedule = CandidateInterviewSchedule.builder().jobPrefix(jobPrefix).email(email)
-				.attemptStatus(AttemptStatus.NOT_ATTEMPTED).interviewResult(InterviewResult.PENDING)
-				.assignedAt(assignedAt).deadlineTime(deadlineTime).build();
+	    CandidateInterviewSchedule schedule = CandidateInterviewSchedule.builder()
+	            .jobPrefix(jobPrefix)
+	            .email(email)
+	            .attemptStatus(AttemptStatus.NOT_ATTEMPTED)
+	            .interviewResult(InterviewResult.PENDING)
+	            .assignedAt(assignedAt)
+	            .deadlineTime(deadlineTime)
+	            .questionsFromDate(questionsFromDate != null ? questionsFromDate.atStartOfDay() : null)
+	            .questionsToDate(questionsToDate != null ? questionsToDate.atTime(23, 59, 59) : null)
+	            .build();
 
-		return scheduleRepo.save(schedule);
+	    return scheduleRepo.save(schedule);
 	}
 
+	
+	
 	@Override
 	public List<CandidateInterviewSchedule> getActiveInterviewsByEmail(String email) {
 		return scheduleRepo.findActiveInterviewsByEmail(email);
 	}
 
 	@Override
-	public List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, java.util.List<String> emails,
-			LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail) {
+	public List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
+	        LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
+	        LocalDate questionsFromDate, LocalDate questionsToDate) {
 
-		if (emails == null || emails.isEmpty()) {
-			throw new IllegalArgumentException("emails must be provided");
-		}
+	    if (emails == null || emails.isEmpty()) {
+	        throw new IllegalArgumentException("emails must be provided");
+	    }
 
-		java.util.List<CandidateInterviewSchedule> schedules = new java.util.ArrayList<>();
+	    List<CandidateInterviewSchedule> schedules = new ArrayList<>();
 
-		for (String email : emails) {
-			JobApplicationForCandidate application = jobAppRepo
-					.findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
-					.orElseThrow(() -> new RuntimeException("Application not found for " + email));
+	    for (String email : emails) {
+	        JobApplicationForCandidate application = jobAppRepo
+	                .findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
+	                .orElseThrow(() -> new RuntimeException("Application not found for " + email));
 
-			application.setInterview("Scheduled");
-			jobAppRepo.save(application);
+	        application.setInterview("Scheduled");
+	        jobAppRepo.save(application);
 
-			CandidateInterviewSchedule schedule = CandidateInterviewSchedule.builder().jobPrefix(jobPrefix)
-					.email(email).attemptStatus(AttemptStatus.NOT_ATTEMPTED).interviewResult(InterviewResult.PENDING)
-					.assignedAt(assignedAt).deadlineTime(deadlineTime).build();
+	        CandidateInterviewSchedule schedule = CandidateInterviewSchedule.builder()
+	                .jobPrefix(jobPrefix)
+	                .email(email)
+	                .attemptStatus(AttemptStatus.NOT_ATTEMPTED)
+	                .interviewResult(InterviewResult.PENDING)
+	                .assignedAt(assignedAt)
+	                .deadlineTime(deadlineTime)
+	                .questionsFromDate(questionsFromDate != null ? questionsFromDate.atStartOfDay() : null)
+	                .questionsToDate(questionsToDate != null ? questionsToDate.atTime(23, 59, 59) : null)
+	                .build();
 
-			schedules.add(schedule);
-		}
+	        schedules.add(schedule);
+	    }
 
-		schedules = scheduleRepo.saveAll(schedules);
+	    schedules = scheduleRepo.saveAll(schedules);
 
-		if (sendEmail) {
-			String subject = "Interview Scheduled - " + jobPrefix;
-			for (CandidateInterviewSchedule s : schedules) {
-				String body = "Your interview for job " + jobPrefix + " is scheduled. Deadline: " + deadlineTime;
-				emailAsyncService.sendInterviewEmail(s.getEmail(), subject, body);
-			}
-		}
+	    if (sendEmail) {
+	        String subject = "Interview Scheduled - " + jobPrefix;
+	        for (CandidateInterviewSchedule s : schedules) {
+	            String body = "Your interview for job " + jobPrefix + " is scheduled. Deadline: " + deadlineTime;
+	            emailAsyncService.sendInterviewEmail(s.getEmail(), subject, body);
+	        }
+	    }
 
-		return schedules;
+	    return schedules;
 	}
+
+	
 
 	@Transactional
 	@Override
@@ -430,25 +452,63 @@ public class InterviewServiceImpl implements InterviewService {
 	    return session;
 	}
 	
+//	@Override
+//	public String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId) {
+//	    return prepareQuestionsAndCreateSession(jobPrefix, email, scheduleId, null, null);
+//	}
+
 	@Override
 	public String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId) {
-	    // Load questions from S3
-	    List<InterviewQuestionInfo> questions = interviewQuestionsService.loadAndPrepareQuestions(jobPrefix);
+	    // Fetch schedule to get date filters
+	    CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
+	            .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
 	    
-	    // Record question usage (optional)
+	    Long fromDate = schedule.getQuestionsFromDate() != null 
+	            ? schedule.getQuestionsFromDate().toInstant(ZoneOffset.UTC).toEpochMilli() 
+	            : null;
+	    Long toDate = schedule.getQuestionsToDate() != null 
+	            ? schedule.getQuestionsToDate().toInstant(ZoneOffset.UTC).toEpochMilli() 
+	            : null;
+	    
+	    // Log the date range for debugging
+	
+	    // Load questions with date filtering
+	    List<InterviewQuestionInfo> questions = interviewQuestionsService.loadAndPrepareQuestions(jobPrefix, fromDate, toDate);
+	    
+	    // Check if questions are loaded
+	    if (questions == null || questions.isEmpty()) {
+	        throw new RuntimeException("No questions found for jobPrefix: " + jobPrefix + 
+	                                   " with date range from " + fromDate + " to " + toDate);
+	    }
+	    
+	  
+	    
 	    recordQuestionsForInterview(scheduleId, questions);
 	    
-	    // Create and store session
 	    InterviewSession session = new InterviewSession();
 	    session.setJobPrefix(jobPrefix);
 	    session.setEmail(email);
 	    session.setQuestions(questions);
 	    session.setCurrentQuestionIndex(0);
-	    session.setResumeSummary(null);   // or pass if available
+	    session.setResumeSummary(null);
 	    saveSession(scheduleId, session);
 	    
-	    // Return the first question text
-	    return questions.get(0).getText();
+	    String firstQuestion = questions.get(0).getText();
+	  
+	    return firstQuestion;
 	}
+
+	// DELETE THIS METHOD - it's not needed and returns null
+	// @Override
+	// public String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId, Long fromDate, Long toDate) {
+//	     return null;
+	// }
+
+//	@Override
+//	public String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId, Long fromDate,
+//			Long toDate) {
+//		// TODO Auto-generated method stub
+//		return null;
+//	}
 	
 }

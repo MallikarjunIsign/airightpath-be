@@ -27,19 +27,21 @@ public class OpenAiVisionServiceImpl implements OpenAiVisionService {
 		            String base64Image = Base64.getEncoder().encodeToString(imageBytes);
 		
 		            String prompt = """
-		Analyze this image carefully.
+		Analyze this proctoring image from a mobile device carefully.
 		
-		Check the following:
+		Verify the following:
+		1. Is exactly ONE person visible? (The candidate)
+		2. Is a computer/laptop screen visible in the frame?
+		3. Are there any other people in the room?
+		4. Is the candidate using another mobile phone, headset, or books?
+		5. Is there anything else suspicious that might indicate cheating?
 		
-		1. Is exactly ONE person visible?
-		2. Is the person sitting in front of a computer or laptop?
-		3. Are other people visible in the room?
+		The goal is to ensure only the candidate and their system are present.
 		
 		Return ONLY JSON:
-		
 		{
 		 "status": "VERIFIED or FAILED",
-		 "reason": ""
+		 "reason": "Short explanation if FAILED, otherwise empty string"
 		}
 		""";
 		
@@ -55,7 +57,8 @@ public class OpenAiVisionServiceImpl implements OpenAiVisionService {
 		     ]
 		   }
 		 ],
-		 "max_tokens":200
+		 "response_format": { "type": "json_object" },
+		 "max_tokens":300
 		}
 		""".formatted(prompt, base64Image);
 		
