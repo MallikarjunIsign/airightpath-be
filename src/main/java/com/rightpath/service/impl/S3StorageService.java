@@ -1,6 +1,7 @@
 package com.rightpath.service.impl;
 
 import java.io.IOException;
+import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+@Slf4j
 @Service
 public class S3StorageService implements StorageService {
 
@@ -68,12 +70,19 @@ public class S3StorageService implements StorageService {
                     .key(key)
                     .build();
             return s3Client.getObject(getReq, software.amazon.awssdk.core.sync.ResponseTransformer.toBytes()).asByteArray();
-        } catch (S3Exception e) {
-            if (e instanceof NoSuchKeyException) {
-                throw new StorageException("File not found in S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
+        }  catch (S3Exception e) {
+            String errorCode = e.awsErrorDetails() != null 
+                    ? e.awsErrorDetails().errorCode() 
+                    : "UNKNOWN";
+
+                log.error("S3 ERROR: code={}, message={}", errorCode, e.getMessage(), e);
+
+                if ("NoSuchKey".equals(errorCode)) {
+                    throw new StorageException("File not found in S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
+                }
+
+                throw new StorageException("Failed to download file from S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
             }
-            throw new StorageException("Failed to download file from S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
-        }
     }
 
     @Override
