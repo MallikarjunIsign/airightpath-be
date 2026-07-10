@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -39,13 +40,18 @@ public class ResumeController {
     @PreAuthorize("hasAuthority('RESUME_UPLOAD')")
     public ResponseEntity<String> uploadResume(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("email") String email,
-            @RequestParam("jobPrefix") String jobPrefix) {
+            @RequestParam("jobPrefix") String jobPrefix,
+            Authentication authentication) {
+
         try {
+            String email = authentication.getName();
+
             resumeService.saveResume(file, email, jobPrefix);
+
             return ResponseEntity.ok("Resume uploaded successfully.");
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload resume.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to upload resume.");
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
