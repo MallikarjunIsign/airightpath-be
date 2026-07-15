@@ -2,6 +2,7 @@ package com.rightpath.error;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,16 +14,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import com.rightpath.exceptions.AiServiceException;
 import com.rightpath.exceptions.ApplicationDeadlinePassedException;
@@ -104,6 +108,15 @@ public class GlobalExceptionHandler {
                 "Malformed request body. Please send valid JSON.", req, null);
     }
 
+    /** Manual JSON (de)serialization failure, e.g. objectMapper.readValue on a request part. */
+    @ExceptionHandler(com.fasterxml.jackson.core.JsonProcessingException.class)
+    public ResponseEntity<ApiError> handleJsonProcessing(com.fasterxml.jackson.core.JsonProcessingException ex,
+            HttpServletRequest req) {
+        logger.warn("JSON processing error at {}: {}", req.getRequestURI(), ex.getOriginalMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST,
+                "Invalid JSON payload. Please check the request format.", req, null);
+    }
+
     /** A path/query parameter had the wrong type (e.g. "abc" for a numeric id). */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest req) {
@@ -118,6 +131,50 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, message, req, null);
     }
 
+    /** A required multipart part (e.g. an uploaded file) was absent. */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiError> handleMissingPart(MissingServletRequestPartException ex, HttpServletRequest req) {
+        String message = "Missing required file/part '" + ex.getRequestPartName() + "'.";
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, message, req, null);
+    }
+
+    /** A required request header was absent. */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiError> handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest req) {
+        String message = "Missing required header '" + ex.getHeaderName() + "'.";
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, message, req, null);
+    }
+
+    /**
+     * Generic bad-argument errors thrown by services (e.g. "Email cannot be
+     * empty", "Language must not be null"). The thrown message is passed through
+     * so the client sees exactly which input was wrong.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest req) {
+        logger.warn("Bad request at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    /**
+     * Invalid-state / illegal-transition errors (e.g. "Assessment has already
+     * been submitted", "Cannot transition from REJECTED"). Treated as a conflict
+     * with the resource's current state.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiError> handleIllegalState(IllegalStateException ex, HttpServletRequest req) {
+        logger.warn("Illegal state at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.CONFLICT, ErrorCodes.CONFLICT, ex.getMessage(), req, null);
+    }
+
+    /** Bare {@code Optional.get()} / {@code orElseThrow()} on an absent value. */
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<ApiError> handleNoSuchElement(NoSuchElementException ex, HttpServletRequest req) {
+        logger.warn("Missing element at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "The requested resource was not found.", req, null);
+    }
+
     // ---------------------------------------------------------------------
     // 401 / 403 - Authentication & authorization
     // ---------------------------------------------------------------------
@@ -130,12 +187,39 @@ public class GlobalExceptionHandler {
                 "Invalid email or password.", req, null);
     }
 
+    /**
+     * Spring wraps any non-{@code UsernameNotFoundException} thrown by
+     * {@code UserDetailsService.loadUserByUsername} into an
+     * {@link InternalAuthenticationServiceException}. Unwrap it so our own
+     * domain exceptions (unknown user, inactive account) map to the right
+     * response instead of a generic 401.
+     */
+    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    public ResponseEntity<ApiError> handleInternalAuth(InternalAuthenticationServiceException ex, HttpServletRequest req) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof InactiveUserException) {
+            logger.warn("Inactive user login at {}: {}", req.getRequestURI(), cause.getMessage());
+            return build(HttpStatus.FORBIDDEN, ErrorCodes.USER_INACTIVE, cause.getMessage(), req, null);
+        }
+        if (cause instanceof UserNotFoundDbException) {
+            // During login, do NOT reveal that the account is unknown (avoids user
+            // enumeration) — return the same message as a wrong password.
+            logger.warn("Login for unknown user at {}", req.getRequestURI());
+            return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_UNAUTHORIZED,
+                    "Invalid email or password.", req, null);
+        }
+        // A genuine internal failure during authentication (e.g. DB unavailable).
+        logger.error("Internal authentication error at {}", req.getRequestURI(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
+                "Something went wrong on our end. Please try again later.", req, null);
+    }
+
     /** Any other authentication failure not matched above. */
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiError> handleAuth(AuthenticationException ex, HttpServletRequest req) {
         logger.warn("Authentication failed for {}: {}", req.getRequestURI(), ex.getMessage());
         return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_UNAUTHORIZED,
-                "Authentication failed.", req, null);
+                "Invalid email or password.", req, null);
     }
 
     @ExceptionHandler(InvalidAccessTokenException.class)
@@ -179,6 +263,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
         logger.warn("Resource not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, ex.getMessage(), req, null);
+    }
+
+    /** JPA entity lookups (e.g. getReferenceById / orElseThrow(EntityNotFoundException::new)). */
+    @ExceptionHandler(jakarta.persistence.EntityNotFoundException.class)
+    public ResponseEntity<ApiError> handleEntityNotFound(jakarta.persistence.EntityNotFoundException ex, HttpServletRequest req) {
+        logger.warn("Entity not found: {}", ex.getMessage());
         return build(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, ex.getMessage(), req, null);
     }
 
@@ -253,6 +344,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleStorage(StorageException ex, HttpServletRequest req) {
         logger.error("Storage error at {}: {}", req.getRequestURI(), ex.getMessage());
         return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.STORAGE_ERROR, ex.getMessage(), req, null);
+    }
+
+    /** File / I/O failure (non-JSON). JsonProcessingException is handled separately as 400. */
+    @ExceptionHandler(java.io.IOException.class)
+    public ResponseEntity<ApiError> handleIo(java.io.IOException ex, HttpServletRequest req) {
+        logger.error("I/O error at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
+                "A file or I/O error occurred while processing your request.", req, null);
     }
 
     @ExceptionHandler(CompilerException.class)

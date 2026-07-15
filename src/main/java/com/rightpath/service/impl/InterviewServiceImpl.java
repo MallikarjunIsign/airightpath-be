@@ -25,6 +25,7 @@ import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.InterviewResult;
+import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.InterviewQuestionRepository;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
@@ -84,7 +85,7 @@ public class InterviewServiceImpl implements InterviewService {
 	    // fetch schedule
 	    CandidateInterviewSchedule schedule = scheduleRepo
 	            .findTopByJobPrefixAndEmailOrderByAssignedAtDesc(jobPrefix, email)
-	            .orElseThrow(() -> new RuntimeException("Interview not assigned"));
+	            .orElseThrow(() -> new ResourceNotFoundException("Interview not assigned"));
 
 	    Long interviewScheduleId = schedule.getId();
 
@@ -129,7 +130,7 @@ public class InterviewServiceImpl implements InterviewService {
 	            InterviewQuestionInfo first = questions.stream()
 	                    .filter(q -> q.getUniqueId().equals(uniqueId))
 	                    .findFirst()
-	                    .orElseThrow(() -> new RuntimeException("Question not found for uniqueId: " + uniqueId));
+	                    .orElseThrow(() -> new ResourceNotFoundException("Question not found for uniqueId: " + uniqueId));
 
 	            InterviewQuestion newQ = new InterviewQuestion();
 	            newQ.setInterviewScheduleId(scheduleId);
@@ -276,7 +277,7 @@ public class InterviewServiceImpl implements InterviewService {
 	        LocalDateTime deadlineTime, LocalDate questionsFromDate, LocalDate questionsToDate) {
 
 	    JobApplicationForCandidate application = jobAppRepo.findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
-	            .orElseThrow(() -> new RuntimeException("Application not found"));
+	            .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
 
 	    application.setInterview("Scheduled");
 	    jobAppRepo.save(application);
@@ -316,7 +317,7 @@ public class InterviewServiceImpl implements InterviewService {
 	    for (String email : emails) {
 	        JobApplicationForCandidate application = jobAppRepo
 	                .findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
-	                .orElseThrow(() -> new RuntimeException("Application not found for " + email));
+	                .orElseThrow(() -> new ResourceNotFoundException("Application not found for " + email));
 
 	        application.setInterview("Scheduled");
 	        jobAppRepo.save(application);
@@ -355,7 +356,7 @@ public class InterviewServiceImpl implements InterviewService {
 	public void markCompleted(Long interviewScheduleId, AttemptStatus attemptStatus, InterviewResult interviewResult,
 			String summaryRef) {
 		CandidateInterviewSchedule schedule = scheduleRepo.findById(interviewScheduleId)
-				.orElseThrow(() -> new RuntimeException("Interview not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
 
 		schedule.setAttemptStatus(attemptStatus);
 		schedule.setInterviewResult(interviewResult);
@@ -386,7 +387,7 @@ public class InterviewServiceImpl implements InterviewService {
 		}
 
 		CandidateInterviewSchedule schedule = scheduleRepo.findById(interviewScheduleId)
-				.orElseThrow(() -> new RuntimeException("Interview not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
 
 		String blobName = buildBlobName(interviewScheduleId, videoFile.getOriginalFilename());
 
@@ -407,7 +408,7 @@ public class InterviewServiceImpl implements InterviewService {
 		}
 
 		CandidateInterviewSchedule schedule = scheduleRepo.findById(interviewScheduleId)
-				.orElseThrow(() -> new RuntimeException("Interview not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
 
 		String blobName = buildBlobName(interviewScheduleId, screenFile.getOriginalFilename());
 
@@ -430,7 +431,7 @@ public class InterviewServiceImpl implements InterviewService {
 	@Override
 	public CandidateInterviewSchedule getResultDetail(Long id) {
 		return scheduleRepo.findById(id)
-				.orElseThrow(() -> new RuntimeException("Interview schedule not found: " + id));
+				.orElseThrow(() -> new ResourceNotFoundException("Interview schedule not found: " + id));
 	}
 
 	private String buildBlobName(Long interviewId, String originalName) {
@@ -446,7 +447,7 @@ public class InterviewServiceImpl implements InterviewService {
 	    InterviewSession session = sessionStore.get(interviewScheduleId);
 
 	    if (session == null) {
-	        throw new RuntimeException("Session not found for interviewScheduleId: " + interviewScheduleId);
+	        throw new ResourceNotFoundException("Session not found for interviewScheduleId: " + interviewScheduleId);
 	    }
 
 	    return session;
@@ -461,7 +462,7 @@ public class InterviewServiceImpl implements InterviewService {
 	public String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId) {
 	    // Fetch schedule to get date filters
 	    CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
-	            .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+	            .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 	    
 	    Long fromDate = schedule.getQuestionsFromDate() != null 
 	            ? schedule.getQuestionsFromDate().toInstant(ZoneOffset.UTC).toEpochMilli() 
@@ -477,7 +478,7 @@ public class InterviewServiceImpl implements InterviewService {
 	    
 	    // Check if questions are loaded
 	    if (questions == null || questions.isEmpty()) {
-	        throw new RuntimeException("No questions found for jobPrefix: " + jobPrefix + 
+	        throw new ResourceNotFoundException("No questions found for jobPrefix: " + jobPrefix + 
 	                                   " with date range from " + fromDate + " to " + toDate);
 	    }
 	    

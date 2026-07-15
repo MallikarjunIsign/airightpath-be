@@ -87,29 +87,23 @@ public class CompilerController {
 		response.setUserEmail(dto.getUserEmail());
 		response.setCreatedAt(dto.getCreatedAt());
 
-		try {
-			// Case 1: Custom input provided
-			if ((dto.getTestCases() == null || dto.getTestCases().isEmpty()) && dto.getCustomInput() != null
-					&& !dto.getCustomInput().trim().isEmpty()) {
+		// Case 1: Custom input provided
+		if ((dto.getTestCases() == null || dto.getTestCases().isEmpty()) && dto.getCustomInput() != null
+				&& !dto.getCustomInput().trim().isEmpty()) {
 
-				log.debug("Processing custom input execution");
-				return processCustomInputExecution(entity, dto, response);
-			}
-
-			// Case 2: Test cases provided
-			if (dto.getTestCases() != null && !dto.getTestCases().isEmpty()) {
-				log.debug("Processing test case execution with {} test cases", dto.getTestCases().size());
-				return processTestCasesExecution(entity, dto, response);
-			}
-
-			// Case 3: No test cases or custom input - run with empty input
-			log.debug("Processing default execution with empty input");
-			return processDefaultExecution(entity, dto, response);
-
-		} catch (Exception e) {
-			log.error("Error during code execution: {}", e.getMessage());
-			return ResponseEntity.internalServerError().body(response);
+			log.debug("Processing custom input execution");
+			return processCustomInputExecution(entity, dto, response);
 		}
+
+		// Case 2: Test cases provided
+		if (dto.getTestCases() != null && !dto.getTestCases().isEmpty()) {
+			log.debug("Processing test case execution with {} test cases", dto.getTestCases().size());
+			return processTestCasesExecution(entity, dto, response);
+		}
+
+		// Case 3: No test cases or custom input - run with empty input
+		log.debug("Processing default execution with empty input");
+		return processDefaultExecution(entity, dto, response);
 	}
 
 	private ResponseEntity<CodeSubmissionResponseDTO> processCustomInputExecution(CodeSubmission entity,
@@ -169,35 +163,30 @@ public class CompilerController {
 	@PostMapping("/saveUnattemptedSubmissions")
 	@PreAuthorize("hasAuthority('COMPILER_RUN')")
 	public ResponseEntity<?> saveUnattemptedSubmissions(@RequestBody List<CodeSubmissionRequestDTO> unattemptedDtos) {
-		try {
-			for (CodeSubmissionRequestDTO dto : unattemptedDtos) {
-				boolean exists = codeSubmissionRepository.findTopByUserEmailAndJobPrefixAndQuestionIdOrderByIdDesc(
-						dto.getUserEmail(), dto.getJobPrefix(), dto.getQuestionId()).isPresent();
+		for (CodeSubmissionRequestDTO dto : unattemptedDtos) {
+			boolean exists = codeSubmissionRepository.findTopByUserEmailAndJobPrefixAndQuestionIdOrderByIdDesc(
+					dto.getUserEmail(), dto.getJobPrefix(), dto.getQuestionId()).isPresent();
 
-				// ❌ Skip if already exists
-				if (exists)
-					continue;
+			// ❌ Skip if already exists
+			if (exists)
+				continue;
 
-				// ✅ Create new record
-				CodeSubmission entity = new CodeSubmission();
-				entity.setLanguage(dto.getLanguage());
-				entity.setScript(dto.getScript());
-				entity.setUserEmail(dto.getUserEmail());
-				entity.setJobPrefix(dto.getJobPrefix());
-				entity.setQuestionId(dto.getQuestionId());
-				entity.setCreatedAt(LocalDateTime.now());
-				entity.setPassed(false);
-				entity.setAttempted(true);
-				entity.setTestResults(List.of());
+			// ✅ Create new record
+			CodeSubmission entity = new CodeSubmission();
+			entity.setLanguage(dto.getLanguage());
+			entity.setScript(dto.getScript());
+			entity.setUserEmail(dto.getUserEmail());
+			entity.setJobPrefix(dto.getJobPrefix());
+			entity.setQuestionId(dto.getQuestionId());
+			entity.setCreatedAt(LocalDateTime.now());
+			entity.setPassed(false);
+			entity.setAttempted(true);
+			entity.setTestResults(List.of());
 
-				codeSubmissionRepository.save(entity);
-			}
-
-			return ResponseEntity.ok("Unattempted submissions saved successfully (existing skipped).");
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.internalServerError().body("Error saving unattempted submissions");
+			codeSubmissionRepository.save(entity);
 		}
+
+		return ResponseEntity.ok("Unattempted submissions saved successfully (existing skipped).");
 	}
 
 	/**

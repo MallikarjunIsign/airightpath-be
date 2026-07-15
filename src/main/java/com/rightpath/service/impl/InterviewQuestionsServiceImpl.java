@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.rightpath.dto.InterviewQuestion;
 import com.rightpath.dto.InterviewQuestionInfo;
 import com.rightpath.entity.UploadInterviewQuestions;
+import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.InterviewQuestionsRepository;
 import com.rightpath.service.InterviewQuestionsService;
 import com.rightpath.service.OpenAiService;
@@ -54,7 +55,7 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
             String fileName = file.getOriginalFilename();
 
             if (fileName == null || fileName.isBlank()) {
-                throw new RuntimeException("File name is missing");
+                throw new IllegalArgumentException("File name is missing");
             }
 
             //  Step 2: Upload using existing S3 service
@@ -86,7 +87,7 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
                     .findByJobPrefixOrderByIdDesc(jobPrefix)
                     .stream()
                     .findFirst()
-                    .orElseThrow(() -> new RuntimeException("No file found for jobPrefix"));
+                    .orElseThrow(() -> new ResourceNotFoundException("No file found for jobPrefix"));
 
             //  Step 2: Extract key
             String key = entity.getFileName(); // interview/file.json
@@ -95,7 +96,7 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
             String[] parts = key.split("/", 2);
 
             if (parts.length < 2) {
-                throw new RuntimeException("Invalid S3 key format");
+                throw new IllegalArgumentException("Invalid S3 key format");
             }
 
             String prefix = parts[0];   // interview
@@ -246,12 +247,12 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
                 .findByJobPrefixOrderByIdDesc(jobPrefix)
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("No file found for jobPrefix: " + jobPrefix));
+                .orElseThrow(() -> new ResourceNotFoundException("No file found for jobPrefix: " + jobPrefix));
 
         String key = entity.getFileName();
         String[] parts = key.split("/", 2);
         if (parts.length < 2) {
-            throw new RuntimeException("Invalid S3 key format: " + key);
+            throw new IllegalArgumentException("Invalid S3 key format: " + key);
         }
         String s3Prefix = parts[0];
         String fileName = parts[1];
@@ -337,7 +338,7 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
             } else if (root.has("questions")) {
                 questionsNode = root.get("questions");
             } else {
-                throw new RuntimeException("Invalid JSON format: no 'questions' array found");
+                throw new IllegalArgumentException("Invalid JSON format: no 'questions' array found");
             }
 
             List<InterviewQuestion> questions = new ArrayList<>();
@@ -373,7 +374,7 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
                 newRoot.set("questions", questionsArray);
                 return objectMapper.writeValueAsString(newRoot);
             } else {
-                throw new RuntimeException("Invalid JSON format: no 'questions' array found");
+                throw new IllegalArgumentException("Invalid JSON format: no 'questions' array found");
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize JSON", e);

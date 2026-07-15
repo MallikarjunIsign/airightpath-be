@@ -1,6 +1,5 @@
 	package com.rightpath.controller;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -90,19 +89,14 @@ public class JobApplicationForCandidateController {
     @PreAuthorize("hasAuthority('JOB_APPLY')")
     public ResponseEntity<?> applyJob(
         @RequestPart("jobApplication") String jobApplicationJson,
-        @RequestPart("resume") MultipartFile resume) {
+        @RequestPart("resume") MultipartFile resume) throws Exception {
 
-        try {
-            ObjectMapper objectMapper = new ObjectMapper();
-            JobApplicationForCandidateDTO dto = objectMapper.readValue(jobApplicationJson, JobApplicationForCandidateDTO.class);
-            dto.setResume(resume);
-            applicationForCandidateService.applyForJob(dto);
+        ObjectMapper objectMapper = new ObjectMapper();
+        JobApplicationForCandidateDTO dto = objectMapper.readValue(jobApplicationJson, JobApplicationForCandidateDTO.class);
+        dto.setResume(resume);
+        applicationForCandidateService.applyForJob(dto);
 
-            return ResponseEntity.ok("Job Application Submitted Successfully.");
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.badRequest().body("Error parsing jobApplication data: " + e.getMessage());
-        }
+        return ResponseEntity.ok("Job Application Submitted Successfully.");
     }
 
     /**
@@ -112,23 +106,15 @@ public class JobApplicationForCandidateController {
     @PreAuthorize("hasAuthority('JOB_APPLY')")
     public ResponseEntity<?> updateJobApplication(
         @RequestPart("jobApplication") String jobApplicationJson,
-        @RequestPart(value = "resume", required = false) MultipartFile resume) {
+        @RequestPart(value = "resume", required = false) MultipartFile resume) throws Exception {
 
-        try {
-            JobApplicationForCandidateDTO dto = objectMapper.readValue(jobApplicationJson, JobApplicationForCandidateDTO.class);
-            if (resume != null && !resume.isEmpty()) {
-                dto.setResume(resume);
-            }
-
-            applicationForCandidateService.updateJobApplicationByJobPrefixAndEmail(dto);
-            return ResponseEntity.ok("Job application updated successfully.");
-        } catch (IOException ex) {
-            return ResponseEntity.badRequest().body("Invalid JSON data: " + ex.getMessage());
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                 .body("Failed to update application: " + ex.getMessage());
+        JobApplicationForCandidateDTO dto = objectMapper.readValue(jobApplicationJson, JobApplicationForCandidateDTO.class);
+        if (resume != null && !resume.isEmpty()) {
+            dto.setResume(resume);
         }
+
+        applicationForCandidateService.updateJobApplicationByJobPrefixAndEmail(dto);
+        return ResponseEntity.ok("Job application updated successfully.");
     }
 
     /**
@@ -308,14 +294,9 @@ public class JobApplicationForCandidateController {
         @RequestParam String jobPrefix,
         @RequestParam String email) {
 
-        try {
-            String result = applicationForCandidateService.acknowledgeCandidate(jobPrefix, email);
-            sendWebSocketNotification(email, jobPrefix, "ACKNOWLEDGED_BACK", "Candidate acknowledged the confirmation");
-            return ResponseEntity.ok(Map.of("status", "success", "message", result));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                               .body(Map.of("status", "error", "message", e.getMessage()));
-        }
+        String result = applicationForCandidateService.acknowledgeCandidate(jobPrefix, email);
+        sendWebSocketNotification(email, jobPrefix, "ACKNOWLEDGED_BACK", "Candidate acknowledged the confirmation");
+        return ResponseEntity.ok(Map.of("status", "success", "message", result));
     }
 
     /**
@@ -389,12 +370,8 @@ public class JobApplicationForCandidateController {
         @RequestParam boolean isAptitudePassed,
         @RequestParam boolean isProgrammingPassed) {
 
-        try {
-            applicationForCandidateService.updateWrittenTestStatus(jobPrefix, email, isAptitudePassed, isProgrammingPassed);
-            return ResponseEntity.ok("Written Test Status updated successfully.");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: " + e.getMessage());
-        }
+        applicationForCandidateService.updateWrittenTestStatus(jobPrefix, email, isAptitudePassed, isProgrammingPassed);
+        return ResponseEntity.ok("Written Test Status updated successfully.");
     }
 
     /**
@@ -494,12 +471,8 @@ public class JobApplicationForCandidateController {
             @RequestParam String jobPrefix,
             @RequestParam String email) {
 
-        try {
-            JobApplicationForCandidate updated = applicationForCandidateService.scheduleInterview(jobPrefix, email);
-            return ResponseEntity.ok(new JobApplicationForCandidateDTO(updated));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+        JobApplicationForCandidate updated = applicationForCandidateService.scheduleInterview(jobPrefix, email);
+        return ResponseEntity.ok(new JobApplicationForCandidateDTO(updated));
     }
 
 }

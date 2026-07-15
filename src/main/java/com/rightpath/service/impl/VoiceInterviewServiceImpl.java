@@ -32,6 +32,7 @@ import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.CompletionReason;
 import com.rightpath.enums.ConversationRole;
 import com.rightpath.enums.InterviewResult;
+import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.VoiceConversationEntryRepository;
 import com.rightpath.service.CandidatePerformanceAnalyzer;
@@ -182,7 +183,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Transactional
     public VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate) {
         CandidateInterviewSchedule schedule = scheduleRepo.findFirstByJobPrefixAndEmailOrderByAssignedAtDesc(jobPrefix, email)
-                .orElseThrow(() -> new RuntimeException("Interview schedule not found for " + jobPrefix + " / " + email));
+                .orElseThrow(() -> new ResourceNotFoundException("Interview schedule not found for " + jobPrefix + " / " + email));
 
         // Resume existing interview if already IN_PROGRESS
         if (schedule.getAttemptStatus() == AttemptStatus.IN_PROGRESS) {
@@ -439,9 +440,9 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         // --- Phase 1: Save candidate answer (same as before) ---
         CandidateInterviewSchedule schedule = transactionTemplate.execute(status -> {
             CandidateInterviewSchedule s = scheduleRepo.findById(scheduleId)
-                    .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+                    .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
             if (s.getAttemptStatus() != AttemptStatus.IN_PROGRESS) {
-                throw new RuntimeException("Interview is not active");
+                throw new IllegalStateException("Interview is not active");
             }
             if (skipped) {
                 VoiceConversationEntry candidateEntry = VoiceConversationEntry.builder()
@@ -561,7 +562,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Transactional
     public void endVoiceInterview(Long scheduleId) {
         CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
-                .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 
         schedule.setAttemptStatus(AttemptStatus.COMPLETED);
         schedule.setEndedAt(LocalDateTime.now());
@@ -578,7 +579,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Transactional
     public boolean handleWarning(Long scheduleId) {
         CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
-                .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 
         schedule.addWarning();
         scheduleRepo.save(schedule);
@@ -599,7 +600,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Override
     public VoiceSessionStatus getSessionStatus(Long scheduleId) {
         CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
-                .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 
         return VoiceSessionStatus.builder()
                 .scheduleId(schedule.getId())
@@ -690,7 +691,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
  // Send response using a String (fetches schedule from DB)
     private void sendResponseComplete(Long scheduleId, String response, boolean isComplete) {
         CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
-                .orElseThrow(() -> new RuntimeException("Schedule not found: " + scheduleId));
+                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
         sendResponseComplete(scheduleId, schedule, response, isComplete);
     }
 

@@ -351,7 +351,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 		Optional<Users> optionalUser = userRepository.findByEmail(email);
 		if (optionalUser.isEmpty()) {
 			logger.error("User not found: {}", email);
-			throw new IllegalArgumentException("User not found");
+			throw new UserNotFoundDbException("User not found");
 		}
 
 		Users user = optionalUser.get();

@@ -1,6 +1,5 @@
 package com.rightpath.controller;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,20 +40,13 @@ public class ResumeController {
     public ResponseEntity<String> uploadResume(
             @RequestParam("file") MultipartFile file,
             @RequestParam("jobPrefix") String jobPrefix,
-            Authentication authentication) {
+            Authentication authentication) throws Exception {
 
-        try {
-            String email = authentication.getName();
+        String email = authentication.getName();
 
-            resumeService.saveResume(file, email, jobPrefix);
+        resumeService.saveResume(file, email, jobPrefix);
 
-            return ResponseEntity.ok("Resume uploaded successfully.");
-        } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Failed to upload resume.");
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        return ResponseEntity.ok("Resume uploaded successfully.");
     }
 
     // ===================================================================== //
@@ -71,19 +63,11 @@ public class ResumeController {
     @PreAuthorize("hasAuthority('RESUME_UPDATE')")
     public ResponseEntity<Map<String, String>> updateResume(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("email") String email) {
+            @RequestParam("email") String email) throws Exception {
         Map<String, String> response = new HashMap<>();
-        try {
-            resumeService.updateResume(file, email);
-            response.put("message", "Resume updated successfully.");
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            response.put("error", "Failed to update resume.");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        } catch (IllegalArgumentException e) {
-            response.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(response);
-        }
+        resumeService.updateResume(file, email);
+        response.put("message", "Resume updated successfully.");
+        return ResponseEntity.ok(response);
     }
 
     // ===================================================================== //

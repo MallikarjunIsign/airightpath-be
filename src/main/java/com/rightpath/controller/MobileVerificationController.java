@@ -48,25 +48,21 @@ public class MobileVerificationController {
     @PostMapping("/monitor")
     public ResponseEntity<Map<String, Object>> monitor(@RequestParam String token,
                                                       @RequestParam("photo") MultipartFile photo) throws IOException {
-        try {
-            String result = openAiVisionService.analyzeRoom(photo.getBytes());
-            JsonNode node = objectMapper.readTree(result);
-            String status = node.get("status").asText();
-            String reason = node.get("reason").asText();
+        String result = openAiVisionService.analyzeRoom(photo.getBytes());
+        JsonNode node = objectMapper.readTree(result);
+        String status = node.get("status").asText();
+        String reason = node.get("reason").asText();
 
-            if ("FAILED".equalsIgnoreCase(status)) {
-                // Find desktop session for this token
-                String desktopSession = mobileConnectionService.getDesktopSession(token);
-                if (desktopSession != null) {
-                    // Notify desktop about the malpractice
-                    messagingTemplate.convertAndSendToUser(desktopSession, "/queue/mobile/warning", 
-                        Map.of("type", "malpractice", "reason", reason));
-                }
+        if ("FAILED".equalsIgnoreCase(status)) {
+            // Find desktop session for this token
+            String desktopSession = mobileConnectionService.getDesktopSession(token);
+            if (desktopSession != null) {
+                // Notify desktop about the malpractice
+                messagingTemplate.convertAndSendToUser(desktopSession, "/queue/mobile/warning",
+                    Map.of("type", "malpractice", "reason", reason));
             }
-
-            return ResponseEntity.ok(Map.of("status", status, "reason", reason));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("status", "ERROR", "reason", e.getMessage()));
         }
+
+        return ResponseEntity.ok(Map.of("status", status, "reason", reason));
     }
 }

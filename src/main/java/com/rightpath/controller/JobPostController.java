@@ -57,19 +57,14 @@ public class JobPostController {
     @PreAuthorize("hasAuthority('JOB_POST_CREATE')")
     public ResponseEntity<JobPost> createJobPost(@RequestBody JobPostDTO dto) {
         log.info("Received request to create new job posting");
-        try {
-            JobPost created = jobPostService.createJobPost(dto);
-            log.debug("Successfully created job posting with ID: {}", created.getId());
-            
-            // Notify subscribers via WebSocket
-            messagingTemplate.convertAndSend("/topic/jobPosts", created);
-            log.info("Broadcasted new job posting to WebSocket subscribers");
-            
-            return ResponseEntity.ok(created);
-        } catch (Exception e) {
-            log.error("Error creating job posting: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+        JobPost created = jobPostService.createJobPost(dto);
+        log.debug("Successfully created job posting with ID: {}", created.getId());
+
+        // Notify subscribers via WebSocket
+        messagingTemplate.convertAndSend("/topic/jobPosts", created);
+        log.info("Broadcasted new job posting to WebSocket subscribers");
+
+        return ResponseEntity.ok(created);
     }
 
     /**
@@ -81,14 +76,9 @@ public class JobPostController {
     @PreAuthorize("hasAuthority('JOB_POST_READ')")
     public ResponseEntity<List<JobPostDTO>> getAllJobs() {
         log.info("Received request for all job postings");
-        try {
-            List<JobPostDTO> jobs = jobPostService.getAllJobPosts();
-            log.debug("Returning {} job postings", jobs.size());
-            return ResponseEntity.ok(jobs);
-        } catch (Exception e) {
-            log.error("Error retrieving job postings: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+        List<JobPostDTO> jobs = jobPostService.getAllJobPosts();
+        log.debug("Returning {} job postings", jobs.size());
+        return ResponseEntity.ok(jobs);
     }
 
     /**
@@ -114,10 +104,6 @@ public class JobPostController {
         } catch (IllegalArgumentException e) {
             log.warn("Invalid application attempt: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (Exception e) {
-            log.error("Error processing application: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("An error occurred while applying to the job.");
         }
     }
 
@@ -141,9 +127,6 @@ public class JobPostController {
         } catch (IllegalArgumentException e) {
             log.warn("Job not found: {}", jobId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(0);
-        } catch (Exception e) {
-            log.error("Error retrieving application count: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(0);
         }
     }
 }

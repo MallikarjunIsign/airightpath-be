@@ -26,6 +26,7 @@ import com.rightpath.entity.Result;
 import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.AssessmentType;
 import com.rightpath.enums.ResultStatus;
+import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.AssessmentRepository;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.repository.ResultRepository;
@@ -129,7 +130,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 	@Override
 	public Assessment fetchAssessmentDetails(Long assessmentId) {
 		Assessment assessment = assessmentRepository.findById(assessmentId)
-				.orElseThrow(() -> new RuntimeException("Assessment not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("Assessment not found"));
 		resolveQuestionPaperFromStorage(assessment);
 		return assessment;
 	}
@@ -387,7 +388,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 	public void markExamAsAttended(String email, Long assessmentId) {
 		Optional<Assessment> assessmentOpt = assessmentRepository.findById(assessmentId);
 		if (assessmentOpt.isEmpty()) {
-			throw new RuntimeException("Assessment not found with ID: " + assessmentId);
+			throw new ResourceNotFoundException("Assessment not found with ID: " + assessmentId);
 		}
 
 		Assessment assessment = assessmentOpt.get();
@@ -401,7 +402,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 		String mobileNumber = application.getMobileNumber();
 
 		if (applications.isEmpty()) {
-			throw new RuntimeException("No job application found for the given jobPrefix and email.");
+			throw new ResourceNotFoundException("No job application found for the given jobPrefix and email.");
 		}
 
 		for (JobApplicationForCandidate app : applications) {
@@ -471,7 +472,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 		Assessment assessment = assessmentRepository
 				.findTopByJobPrefixAndCandidateEmailAndAssessmentTypeOrderByAssignedAtDesc(jobPrefix, candidateEmail,
 						AssessmentType.valueOf(assessmentType))
-				.orElseThrow(() -> new RuntimeException("No assessment found for given inputs: " + candidateEmail + ", "
+				.orElseThrow(() -> new ResourceNotFoundException("No assessment found for given inputs: " + candidateEmail + ", "
 						+ jobPrefix + ", " + assessmentType));
 
 		String fileContent = downloadFileContentFromStorage(assessment.getContainerName(), assessment.getFileName());

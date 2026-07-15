@@ -195,32 +195,26 @@ public class AuthenthicationController {
 	 * Generate OTP for email or mobile.
 	 */
 	@PostMapping("/generate-otp")
-	public ResponseEntity<Map<String, String>> generateOtp(@RequestBody Map<String, String> request) {
+	public ResponseEntity<Map<String, String>> generateOtp(@RequestBody Map<String, String> request) throws Exception {
 		String type = request.get("type");
 		String value = request.get("value");
 
-		try {
-			if ("email".equalsIgnoreCase(type)) {
-				boolean exists = userDetailsServiceImpl.isEmailRegistered(value);
-				if (!exists) {
-					logger.warn("Email not registered: {}", value);
-					return ResponseEntity.badRequest().body(Map.of("error", "Email is not registered."));
-				}
-				otpService.generateAndSendOtp(value, null);
-				logger.info("OTP sent to email: {}", value);
-				return ResponseEntity.ok(Map.of("message", "OTP has been sent to your registered email."));
-			} else if ("mobile".equalsIgnoreCase(type)) {
-				otpService.generateAndSendOtp(null, value);
-				logger.info("OTP sent to mobile: {}", value);
-				return ResponseEntity.ok(Map.of("message", "OTP has been sent to your mobile number."));
-			} else {
-				logger.warn("Invalid OTP request type: {}", type);
-				return ResponseEntity.badRequest().body(Map.of("error", "Invalid OTP delivery method."));
+		if ("email".equalsIgnoreCase(type)) {
+			boolean exists = userDetailsServiceImpl.isEmailRegistered(value);
+			if (!exists) {
+				logger.warn("Email not registered: {}", value);
+				return ResponseEntity.badRequest().body(Map.of("error", "Email is not registered."));
 			}
-		} catch (Exception e) {
-			logger.error("OTP generation failed: {}", e.getMessage());
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(Map.of("error", "Failed to send OTP. Please try again later."));
+			otpService.generateAndSendOtp(value, null);
+			logger.info("OTP sent to email: {}", value);
+			return ResponseEntity.ok(Map.of("message", "OTP has been sent to your registered email."));
+		} else if ("mobile".equalsIgnoreCase(type)) {
+			otpService.generateAndSendOtp(null, value);
+			logger.info("OTP sent to mobile: {}", value);
+			return ResponseEntity.ok(Map.of("message", "OTP has been sent to your mobile number."));
+		} else {
+			logger.warn("Invalid OTP request type: {}", type);
+			return ResponseEntity.badRequest().body(Map.of("error", "Invalid OTP delivery method."));
 		}
 	}
 
@@ -251,21 +245,15 @@ public class AuthenthicationController {
 	public ResponseEntity<Map<String, Object>> updatePassword(@RequestParam(required = false) String email,
 			@RequestParam(required = false) String mobile, @RequestParam String newPassword) {
 
-		try {
-			boolean isUpdated = otpService.validateOtpAndUpdatePassword(email, mobile, newPassword);
-			if (isUpdated) {
-				logger.info("Password updated for {}", email != null ? email : mobile);
-				return ResponseEntity.ok(Map.of("success", true, "message", "Password updated successfully",
-						"contactMethod", email != null ? "email" : "mobile"));
-			} else {
-				logger.warn("Password update failed for {}", email != null ? email : mobile);
-				return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-						.body(Map.of("success", false, "message", "Password update failed"));
-			}
-		} catch (Exception e) {
-			logger.error("Error updating password: {}", e.getMessage());
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-					.body(Map.of("success", false, "message", "Error updating password"));
+		boolean isUpdated = otpService.validateOtpAndUpdatePassword(email, mobile, newPassword);
+		if (isUpdated) {
+			logger.info("Password updated for {}", email != null ? email : mobile);
+			return ResponseEntity.ok(Map.of("success", true, "message", "Password updated successfully",
+					"contactMethod", email != null ? "email" : "mobile"));
+		} else {
+			logger.warn("Password update failed for {}", email != null ? email : mobile);
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+					.body(Map.of("success", false, "message", "Password update failed"));
 		}
 	}
 
@@ -292,15 +280,10 @@ public class AuthenthicationController {
 	@GetMapping("/profile-details/{email}")
 	@PreAuthorize("hasAuthority('USER_READ')")
 	public ResponseEntity<UsersDto> getUserDetails(@PathVariable String email) {
-		try {
-			Users user = userDetailsServiceImpl.getUserByEmail(email);
-			UsersDto userDto = new UsersDto(user);
-			logger.info("Profile details fetched for: {}", email);
-			return ResponseEntity.ok(userDto);
-		} catch (RuntimeException e) {
-			logger.warn("User not found: {}", email);
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-		}
+		Users user = userDetailsServiceImpl.getUserByEmail(email);
+		UsersDto userDto = new UsersDto(user);
+		logger.info("Profile details fetched for: {}", email);
+		return ResponseEntity.ok(userDto);
 	}
 
 	/**
@@ -327,14 +310,9 @@ public class AuthenthicationController {
 	public ResponseEntity<Map<String, String>> changePassword(@RequestParam String email,
 			@RequestParam String oldPassword, @RequestParam String newPassword, @RequestParam String confirmPassword) {
 
-		try {
-			logger.info("Password change requested for: {}", email);
-			String message = userDetailsServiceImpl.changePassword(email, oldPassword, newPassword, confirmPassword);
-			return ResponseEntity.ok(Map.of("message", message));
-		} catch (IllegalArgumentException e) {
-			logger.warn("Password change failed: {}", e.getMessage());
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", e.getMessage()));
-		}
+		logger.info("Password change requested for: {}", email);
+		String message = userDetailsServiceImpl.changePassword(email, oldPassword, newPassword, confirmPassword);
+		return ResponseEntity.ok(Map.of("message", message));
 	}
 
 	private String extractCookie(HttpServletRequest request, String cookieName) {

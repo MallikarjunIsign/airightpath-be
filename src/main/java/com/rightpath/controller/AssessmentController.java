@@ -70,16 +70,10 @@ public class AssessmentController {
 	@PreAuthorize("hasAuthority('ASSESSMENT_UPLOAD')")
 	public ResponseEntity<Map<String, String>> uploadAssessment(@ModelAttribute AssessmentUploadDto dto) {
 		Map<String, String> response = new HashMap<>();
-		try {
-			assessmentService.uploadAssessment(dto);
-			response.put("status", "success");
-			response.put("message", "Assessment uploaded successfully.");
-			return ResponseEntity.ok(response); // Return JSON response
-		} catch (Exception e) {
-			response.put("status", "error");
-			response.put("message", "Error uploading assessment: " + e.getMessage());
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-		}
+		assessmentService.uploadAssessment(dto);
+		response.put("status", "success");
+		response.put("message", "Assessment uploaded successfully.");
+		return ResponseEntity.ok(response); // Return JSON response
 	}
 
 	/**
@@ -101,43 +95,36 @@ public class AssessmentController {
         @RequestPart("jobPrefix") String jobPrefix
     ) {
         Map<String, String> response = new HashMap<>();
-        
-        try {
-            // Parse datetime strings
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
-            LocalDateTime parsedStartTime = LocalDateTime.parse(startTime, formatter);
-            LocalDateTime parsedDeadline = LocalDateTime.parse(deadline, formatter);
 
-            // Validate time range
-            if (parsedStartTime.isAfter(parsedDeadline)) {
-                response.put("status", "error");
-                response.put("message", "Start time must be before deadline");
-                return ResponseEntity.badRequest().body(response);
-            }
+        // Parse datetime strings
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+        LocalDateTime parsedStartTime = LocalDateTime.parse(startTime, formatter);
+        LocalDateTime parsedDeadline = LocalDateTime.parse(deadline, formatter);
 
-            // Build DTO
-            AssignAssessmentDto dto = new AssignAssessmentDto();
-            dto.setCandidateEmails(List.of(candidateEmails.split(",")));
-            dto.setStartTime(parsedStartTime);
-            dto.setDeadline(parsedDeadline);
-            dto.setAptitudeQuestionPaper(aptitudeQuestionPaper);
-            dto.setCodingQuestionPaper(codingQuestionPaper);
-            dto.setAptitudeAnswerKey(aptitudeAnswerKey);
-            dto.setUploadedBy(uploadedBy);
-            dto.setJobPrefix(jobPrefix);
-
-            // Call service
-            assessmentService.assignAssessment(dto, jobPrefix);
-            
-            response.put("status", "success");
-            response.put("message", "Assessments assigned successfully");
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
+        // Validate time range
+        if (parsedStartTime.isAfter(parsedDeadline)) {
             response.put("status", "error");
-            response.put("message", "Failed to assign assessments: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(response);
+            response.put("message", "Start time must be before deadline");
+            return ResponseEntity.badRequest().body(response);
         }
+
+        // Build DTO
+        AssignAssessmentDto dto = new AssignAssessmentDto();
+        dto.setCandidateEmails(List.of(candidateEmails.split(",")));
+        dto.setStartTime(parsedStartTime);
+        dto.setDeadline(parsedDeadline);
+        dto.setAptitudeQuestionPaper(aptitudeQuestionPaper);
+        dto.setCodingQuestionPaper(codingQuestionPaper);
+        dto.setAptitudeAnswerKey(aptitudeAnswerKey);
+        dto.setUploadedBy(uploadedBy);
+        dto.setJobPrefix(jobPrefix);
+
+        // Call service
+        assessmentService.assignAssessment(dto, jobPrefix);
+
+        response.put("status", "success");
+        response.put("message", "Assessments assigned successfully");
+        return ResponseEntity.ok(response);
     }
 
 
@@ -226,12 +213,6 @@ public class AssessmentController {
 			response.put("message", e.getMessage());
 			response.put("status", "error");
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-		} catch (Exception e) {
-			// Handle generic errors
-			Map<String, Object> response = new HashMap<>();
-			response.put("message", "An unexpected error occurred.");
-			response.put("status", "error");
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
 		}
 	}
 
@@ -326,16 +307,12 @@ public class AssessmentController {
 	
 	@PostMapping("/markExamAttended")
     public ResponseEntity<?> markExamAttended(@RequestBody Map<String, Object> request) {
-        try {
-            String candidateEmail = (String) request.get("candidateEmail");
-            Long assessmentId = Long.parseLong(request.get("assessmentId").toString());
-          //  String jobPrefix = (String) request.get("jobPrefix");
-            
-            assessmentService.markExamAsAttended(candidateEmail, assessmentId);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error marking exam as attended");
-        }
+        String candidateEmail = (String) request.get("candidateEmail");
+        Long assessmentId = Long.parseLong(request.get("assessmentId").toString());
+      //  String jobPrefix = (String) request.get("jobPrefix");
+
+        assessmentService.markExamAsAttended(candidateEmail, assessmentId);
+        return ResponseEntity.ok().build();
     }
 
 	
@@ -353,62 +330,49 @@ public class AssessmentController {
 			@RequestPart("assessmentType") String assessmentType
 	) {
 		Map<String, String> response = new HashMap<>();
-		try {
-			DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
-			LocalDateTime parsedStartTime = LocalDateTime.parse(startTime, formatter);
-			LocalDateTime parsedDeadline = LocalDateTime.parse(deadline, formatter);
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+		LocalDateTime parsedStartTime = LocalDateTime.parse(startTime, formatter);
+		LocalDateTime parsedDeadline = LocalDateTime.parse(deadline, formatter);
 
-			if (parsedStartTime.isAfter(parsedDeadline)) {
-				response.put("status", "error");
-				response.put("message", "Start time must be before deadline");
-				return ResponseEntity.badRequest().body(response);
-			}
-
-			AssignAssessmentBlobDto dto = new AssignAssessmentBlobDto();
-			dto.setCandidateEmails(List.of(candidateEmails.split(",")));
-			dto.setStartTime(parsedStartTime);
-			dto.setDeadline(parsedDeadline);
-			dto.setFile(file);
-			dto.setFileName(fileName);
-			dto.setUploadedBy(uploadedBy);
-			dto.setJobPrefix(jobPrefix);
-			dto.setAssessmentType(assessmentType);
-
-			assessmentService.assignAssessmentToStorage(dto);
-
-			response.put("status", "success");
-			response.put("message", "Assessments assigned with storage successfully");
-			return ResponseEntity.ok(response);
-
-		} catch (Exception e) {
+		if (parsedStartTime.isAfter(parsedDeadline)) {
 			response.put("status", "error");
-			response.put("message", "Failed to assign assessments: " + e.getMessage());
-			return ResponseEntity.internalServerError().body(response);
+			response.put("message", "Start time must be before deadline");
+			return ResponseEntity.badRequest().body(response);
 		}
+
+		AssignAssessmentBlobDto dto = new AssignAssessmentBlobDto();
+		dto.setCandidateEmails(List.of(candidateEmails.split(",")));
+		dto.setStartTime(parsedStartTime);
+		dto.setDeadline(parsedDeadline);
+		dto.setFile(file);
+		dto.setFileName(fileName);
+		dto.setUploadedBy(uploadedBy);
+		dto.setJobPrefix(jobPrefix);
+		dto.setAssessmentType(assessmentType);
+
+		assessmentService.assignAssessmentToStorage(dto);
+
+		response.put("status", "success");
+		response.put("message", "Assessments assigned with storage successfully");
+		return ResponseEntity.ok(response);
 	}
 	
 	@GetMapping("/assessments/{id}/content")
-	public ResponseEntity<?> getAssessmentFileContent(@PathVariable Long id) {
-		try {
-			Assessment assessment = assessmentRepository.findById(id)
-					.orElseThrow(() -> new RuntimeException("Assessment not found with id: " + id));
+	public ResponseEntity<?> getAssessmentFileContent(@PathVariable Long id) throws Exception {
+		Assessment assessment = assessmentRepository.findById(id)
+				.orElseThrow(() -> new RuntimeException("Assessment not found with id: " + id));
 
-			String containerName = assessment.getContainerName();
-			String fileName = assessment.getFileName();
+		String containerName = assessment.getContainerName();
+		String fileName = assessment.getFileName();
 
-			String fileContent = assessmentService.downloadFileContentFromStorage(containerName, fileName);
+		String fileContent = assessmentService.downloadFileContentFromStorage(containerName, fileName);
 
-			ObjectMapper objectMapper = new ObjectMapper();
-			List<Map<String, Object>> questions = objectMapper.readValue(
-					fileContent, new TypeReference<List<Map<String, Object>>>() {}
-			);
+		ObjectMapper objectMapper = new ObjectMapper();
+		List<Map<String, Object>> questions = objectMapper.readValue(
+				fileContent, new TypeReference<List<Map<String, Object>>>() {}
+		);
 
-			return ResponseEntity.ok(questions);
-
-		} catch (Exception e) {
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-								 .body(Map.of("error", "Failed to fetch file content: " + e.getMessage()));
-		}
+		return ResponseEntity.ok(questions);
 	}
 
 	@GetMapping("/assessments/content/latest")
@@ -416,15 +380,10 @@ public class AssessmentController {
 	        @RequestParam String jobPrefix,
 	        @RequestParam String candidateEmail,
 	        @RequestParam String assessmentType) {
-	    try {
-	        List<Map<String, Object>> questions =
-	                assessmentService.getLatestAssessmentContent(jobPrefix, candidateEmail, assessmentType);
+	    List<Map<String, Object>> questions =
+	            assessmentService.getLatestAssessmentContent(jobPrefix, candidateEmail, assessmentType);
 
-	        return ResponseEntity.ok(questions);
-	    } catch (Exception e) {
-	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-	                .body(Map.of("error", "Failed to fetch assessment content: " + e.getMessage()));
-	    }
+	    return ResponseEntity.ok(questions);
 	}
 
 	

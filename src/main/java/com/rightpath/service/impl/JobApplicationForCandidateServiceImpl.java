@@ -186,7 +186,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         applicationForCandidateRepository.findByJobPrefixAndEmail(dto.getJobPrefix(), dto.getEmail());
 
     if (applications.isEmpty()) {
-        throw new RuntimeException("No application found for the given jobPrefix and email.");
+        throw new ResourceNotFoundException("No application found for the given jobPrefix and email.");
     }
 
     JobApplicationForCandidate application = applications.get(0);
@@ -347,7 +347,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
     public JobApplicationForCandidateDTO getApplicationByJobPrefixAndEmail(String jobPrefix, String email) {
         List<JobApplicationForCandidate> apps = applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 
-        if (apps.isEmpty()) throw new RuntimeException("No application found");
+        if (apps.isEmpty()) throw new ResourceNotFoundException("No application found");
 
         return convertToDTO(apps.get(0));
     }
@@ -390,7 +390,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	    @Override
 	    public JobApplicationForCandidate getById(Long id) {
 	        return applicationForCandidateRepository.findById(id)
-	                         .orElseThrow(() -> new RuntimeException("Candidate not found with id: " + id));
+	                         .orElseThrow(() -> new ResourceNotFoundException("Candidate not found with id: " + id));
 	    }
     
 	    @Override
@@ -398,14 +398,14 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository
 	                .findByJobPrefixAndEmail(jobPrefix, email);
 	        JobPost jobs = jobPostRepository.findByJobPrefix(jobPrefix)
-	                .orElseThrow(() -> new RuntimeException("No job found for prefix: " + jobPrefix));
+	                .orElseThrow(() -> new ResourceNotFoundException("No job found for prefix: " + jobPrefix));
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        if (date == null || date.isBlank() || time == null || time.isBlank()) {
-	            throw new RuntimeException("Date and time are required for acknowledgement mail.");
+	            throw new IllegalArgumentException("Date and time are required for acknowledgement mail.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -451,7 +451,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	                );
 
 	        } catch (DateTimeParseException e) {
-	            throw new RuntimeException("Failed to parse date or time: " + e.getMessage());
+	            throw new IllegalArgumentException("Failed to parse date or time: " + e.getMessage());
 	        } catch (Exception e) {
 	            throw new RuntimeException("Error during acknowledgement process: " + e.getMessage());
 	        }
@@ -465,7 +465,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	                applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException(
+	            throw new ResourceNotFoundException(
 	                "No matching application found for the provided jobPrefix and email.");
 	        }
 
@@ -515,7 +515,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	                .findByJobPrefixAndEmail(jobPrefix, email);
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -524,7 +524,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.RECONFIRMED);
 
 	        if (application.getExamDate() == null || application.getExamTime() == null) {
-	            throw new RuntimeException("Exam date or time not found. Please send acknowledgement mail first.");
+	            throw new ResourceNotFoundException("Exam date or time not found. Please send acknowledgement mail first.");
 	        }
 
 	        application.setStatus(ApplicationStatus.RECONFIRMED);
@@ -558,7 +558,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	                applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -595,7 +595,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No job application found for the given job prefix and email");
+	            throw new ResourceNotFoundException("No job application found for the given job prefix and email");
 	        }
 
 	        String status = (isAptitudePassed && isProgrammingPassed) ? "Passed" : "Failed";
@@ -610,7 +610,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	    public void sendSuccessMail(String jobPrefix, String email) {
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -642,7 +642,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	    public void sendFailureMail(String jobPrefix, String email) {
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -678,7 +678,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	                .findByJobPrefixAndEmail(jobPrefix, email);
 
 	        if (applications.isEmpty()) {
-	            throw new RuntimeException("No application found for the given job prefix and email.");
+	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -713,7 +713,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 
 	        JobApplicationForCandidate application = applicationForCandidateRepository
 	                .findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
-	                .orElseThrow(() -> new RuntimeException("Application not found"));
+	                .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
 
 	        // Validate workflow transition: EXAM_COMPLETED → INTERVIEW_SCHEDULED
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.INTERVIEW_SCHEDULED);
