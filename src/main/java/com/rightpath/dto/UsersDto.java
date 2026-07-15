@@ -15,8 +15,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UsersDto {
-	@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@gmail\\.com$", message = "Email must be in the format 'something@gmail.com'")
-	@Size(min = 11, max = 254, message = "Email must be between 11 and 254 characters")
+	@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", message = "Email must be a valid email address")
+	@Size(min = 6, max = 254, message = "Email must be between 6 and 254 characters")
 	@NotBlank(message = "Email is mandatory")
 	private String email;
 	@NotBlank(message = "First name is mandatory")
