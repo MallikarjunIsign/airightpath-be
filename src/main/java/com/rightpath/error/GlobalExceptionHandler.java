@@ -1,0 +1,289 @@
+package com.rightpath.error;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+
+import com.rightpath.exceptions.AiServiceException;
+import com.rightpath.exceptions.ApplicationDeadlinePassedException;
+import com.rightpath.exceptions.CompilerException;
+import com.rightpath.exceptions.CustomException;
+import com.rightpath.exceptions.InactiveUserException;
+import com.rightpath.exceptions.InvalidAccessTokenException;
+import com.rightpath.exceptions.InvalidRefreshTokenException;
+import com.rightpath.exceptions.PasswordNotMatchException;
+import com.rightpath.exceptions.PasswordSizeException;
+import com.rightpath.exceptions.RefreshTokenExpiredException;
+import com.rightpath.exceptions.RefreshTokenReuseException;
+import com.rightpath.exceptions.ResourceNotFoundException;
+import com.rightpath.exceptions.StorageException;
+import com.rightpath.exceptions.UserAlreadyInDatabaseException;
+import com.rightpath.exceptions.UserNotFoundDbException;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+
+/**
+ * Single, application-wide exception handler.
+ *
+ * <p>Every exception that escapes a controller is translated here into a
+ * consistent {@link ApiError} body ({@code success=false}, machine-readable
+ * {@code code}, human-readable {@code message}, request {@code path},
+ * {@code timestamp} and optional {@code details}). Because this advice covers
+ * all cases, services should simply <b>throw</b> a meaningful exception rather
+ * than wrap calls in try/catch and swallow the cause.</p>
+ *
+ * <p>Only the fallback {@link #handleGeneric} hides its cause (to avoid leaking
+ * internals); every other handler returns the exception's own message so the
+ * client learns exactly what went wrong (e.g. "Email already exists",
+ * "Invalid username or password", "User is Inactive").</p>
+ */
+@Order(Ordered.HIGHEST_PRECEDENCE)
+@RestControllerAdvice(basePackages = "com.rightpath")
+public class GlobalExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    private static ResponseEntity<ApiError> build(HttpStatus status, String code, String message,
+            HttpServletRequest req, Map<String, Object> details) {
+        return ResponseEntity.status(status)
+                .body(ApiError.of(code, message, req.getRequestURI(), details));
+    }
+
+    // ---------------------------------------------------------------------
+    // 400 - Validation / malformed request
+    // ---------------------------------------------------------------------
+
+    /** Bean-validation failures on @Valid @RequestBody arguments (per-field detail). */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
+        Map<String, Object> fieldErrors = new LinkedHashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            // Keep the first message per field.
+            fieldErrors.putIfAbsent(error.getField(), error.getDefaultMessage());
+        }
+        logger.warn("Validation failed for {}: {}", req.getRequestURI(), fieldErrors);
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR,
+                "Validation failed. Please correct the highlighted fields.", req, fieldErrors);
+    }
+
+    /** Bean-validation failures on @RequestParam / @PathVariable / method params. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest req) {
+        Map<String, Object> violations = new LinkedHashMap<>();
+        ex.getConstraintViolations().forEach(v ->
+                violations.putIfAbsent(v.getPropertyPath().toString(), v.getMessage()));
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR,
+                "Validation failed. Please correct the highlighted fields.", req, violations);
+    }
+
+    /** Body could not be parsed (malformed/empty JSON, wrong types). */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST,
+                "Malformed request body. Please send valid JSON.", req, null);
+    }
+
+    /** A path/query parameter had the wrong type (e.g. "abc" for a numeric id). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest req) {
+        String message = "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName() + "'.";
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, message, req, null);
+    }
+
+    /** A required query parameter was absent. */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> handleMissingParam(MissingServletRequestParameterException ex, HttpServletRequest req) {
+        String message = "Missing required parameter '" + ex.getParameterName() + "'.";
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BAD_REQUEST, message, req, null);
+    }
+
+    // ---------------------------------------------------------------------
+    // 401 / 403 - Authentication & authorization
+    // ---------------------------------------------------------------------
+
+    /** Wrong password (or bad principal). Kept generic to avoid user enumeration. */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiError> handleBadCreds(BadCredentialsException ex, HttpServletRequest req) {
+        logger.warn("Bad credentials for {}", req.getRequestURI());
+        return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_UNAUTHORIZED,
+                "Invalid email or password.", req, null);
+    }
+
+    /** Any other authentication failure not matched above. */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiError> handleAuth(AuthenticationException ex, HttpServletRequest req) {
+        logger.warn("Authentication failed for {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_UNAUTHORIZED,
+                "Authentication failed.", req, null);
+    }
+
+    @ExceptionHandler(InvalidAccessTokenException.class)
+    public ResponseEntity<ApiError> handleInvalidAccess(InvalidAccessTokenException ex, HttpServletRequest req) {
+        return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_INVALID_TOKEN, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler({ InvalidRefreshTokenException.class, RefreshTokenExpiredException.class })
+    public ResponseEntity<ApiError> handleInvalidRefresh(RuntimeException ex, HttpServletRequest req) {
+        return build(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_INVALID_REFRESH, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(RefreshTokenReuseException.class)
+    public ResponseEntity<ApiError> handleReuse(RefreshTokenReuseException ex, HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, ErrorCodes.AUTH_REFRESH_REUSE_DETECTED, ex.getMessage(), req,
+                Map.of("sessionId", ex.getSessionId().toString()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleDenied(AccessDeniedException ex, HttpServletRequest req) {
+        return build(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_FORBIDDEN,
+                "You do not have permission to perform this action.", req, null);
+    }
+
+    @ExceptionHandler(InactiveUserException.class)
+    public ResponseEntity<ApiError> handleInactiveUser(InactiveUserException ex, HttpServletRequest req) {
+        logger.warn("Inactive user: {}", ex.getMessage());
+        return build(HttpStatus.FORBIDDEN, ErrorCodes.USER_INACTIVE, ex.getMessage(), req, null);
+    }
+
+    // ---------------------------------------------------------------------
+    // 404 - Not found
+    // ---------------------------------------------------------------------
+
+    @ExceptionHandler(UserNotFoundDbException.class)
+    public ResponseEntity<ApiError> handleUserNotFound(UserNotFoundDbException ex, HttpServletRequest req) {
+        logger.warn("User not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, ErrorCodes.USER_NOT_FOUND, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiError> handleResourceNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
+        logger.warn("Resource not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, ex.getMessage(), req, null);
+    }
+
+    // ---------------------------------------------------------------------
+    // 400 / 409 - Domain / business rules
+    // ---------------------------------------------------------------------
+
+    @ExceptionHandler(PasswordSizeException.class)
+    public ResponseEntity<ApiError> handlePasswordSize(PasswordSizeException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.PASSWORD_POLICY, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(PasswordNotMatchException.class)
+    public ResponseEntity<ApiError> handlePasswordMismatch(PasswordNotMatchException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.PASSWORD_MISMATCH, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(ApplicationDeadlinePassedException.class)
+    public ResponseEntity<ApiError> handleDeadlinePassed(ApplicationDeadlinePassedException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.APPLICATION_DEADLINE_PASSED, ex.getMessage(), req, null);
+    }
+
+    /** Duplicate registration / conflicting state (e.g. "Email already exists"). */
+    @ExceptionHandler(UserAlreadyInDatabaseException.class)
+    public ResponseEntity<ApiError> handleUserAlreadyExists(UserAlreadyInDatabaseException ex, HttpServletRequest req) {
+        logger.warn("Duplicate user: {}", ex.getMessage());
+        return build(HttpStatus.CONFLICT, ErrorCodes.USER_ALREADY_EXISTS, ex.getMessage(), req, null);
+    }
+
+    /** Generic business-rule violation. Carries the thrown message to the client. */
+    @ExceptionHandler(CustomException.class)
+    public ResponseEntity<ApiError> handleBusiness(CustomException ex, HttpServletRequest req) {
+        logger.warn("Business rule violation at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.BUSINESS_ERROR, ex.getMessage(), req, null);
+    }
+
+    /** DB constraint breach (e.g. unique index) that reached the persistence layer. */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
+        logger.warn("Data integrity violation at {}: {}", req.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.CONFLICT, ErrorCodes.CONFLICT,
+                "The request conflicts with existing data.", req, null);
+    }
+
+    // ---------------------------------------------------------------------
+    // 405 / 413 / 415 - Transport-level
+    // ---------------------------------------------------------------------
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex, HttpServletRequest req) {
+        return build(HttpStatus.METHOD_NOT_ALLOWED, ErrorCodes.METHOD_NOT_ALLOWED,
+                "HTTP method '" + ex.getMethod() + "' is not supported for this endpoint.", req, null);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiError> handleMediaType(HttpMediaTypeNotSupportedException ex, HttpServletRequest req) {
+        return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCodes.UNSUPPORTED_MEDIA_TYPE,
+                "Content type is not supported.", req, null);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> handleUploadSize(MaxUploadSizeExceededException ex, HttpServletRequest req) {
+        return build(HttpStatus.PAYLOAD_TOO_LARGE, ErrorCodes.PAYLOAD_TOO_LARGE,
+                "Uploaded file is too large.", req, null);
+    }
+
+    // ---------------------------------------------------------------------
+    // 5xx - Infrastructure / unexpected
+    // ---------------------------------------------------------------------
+
+    @ExceptionHandler(StorageException.class)
+    public ResponseEntity<ApiError> handleStorage(StorageException ex, HttpServletRequest req) {
+        logger.error("Storage error at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.STORAGE_ERROR, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(CompilerException.class)
+    public ResponseEntity<ApiError> handleCompiler(CompilerException ex, HttpServletRequest req) {
+        logger.warn("Compiler error at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCodes.COMPILER_ERROR, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(AiServiceException.class)
+    public ResponseEntity<ApiError> handleAiService(AiServiceException ex, HttpServletRequest req) {
+        String message = ex.getMessage();
+        String code;
+        if (message != null && message.toLowerCase().contains("timed out")) {
+            code = ErrorCodes.AI_SERVICE_TIMEOUT;
+            logger.warn("AI service timeout: {} - path={}", message, req.getRequestURI());
+        } else {
+            code = ErrorCodes.AI_SERVICE_ERROR;
+            logger.warn("AI service error: {} - path={}", message, req.getRequestURI());
+        }
+        return build(HttpStatus.SERVICE_UNAVAILABLE, code, message, req, null);
+    }
+
+    /**
+     * Final safety net. The real cause is logged with the full stack trace, but
+     * the response deliberately hides internals to avoid leaking implementation
+     * details to clients.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest req) {
+        logger.error("Unhandled error at {}", req.getRequestURI(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
+                "Something went wrong on our end. Please try again later.", req, null);
+    }
+}

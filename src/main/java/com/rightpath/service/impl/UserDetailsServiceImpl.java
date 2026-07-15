@@ -31,7 +31,6 @@ import org.springframework.web.multipart.MultipartFile; // Represents uploaded f
 import com.rightpath.dto.Login;
 import com.rightpath.dto.UsersDto;
 import com.rightpath.entity.Users;
-import com.rightpath.exceptions.CustomException;
 import com.rightpath.exceptions.InactiveUserException;
 import com.rightpath.exceptions.UserAlreadyInDatabaseException;
 import com.rightpath.exceptions.StorageException;
@@ -129,12 +128,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
 	    // ✅ 1. Check if email already exists
 	    if (userRepository.existsByEmail(usersDto.getEmail())) {
-	        throw new CustomException("Email already exists");
+	        throw new UserAlreadyInDatabaseException("Email already exists");
 	    }
 
 	    // ✅ 2. Check if mobile number already exists
 	    if (userRepository.existsByMobileNumber(usersDto.getMobileNumber())) {
-	        throw new CustomException("Mobile number already exists");
+	        throw new UserAlreadyInDatabaseException("Mobile number already exists");
 	    }
 
 	    // ✅ 3. Validate password strength
