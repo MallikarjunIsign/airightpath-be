@@ -1,0 +1,177 @@
+# =====================================================================
+# UAT profile  (activate with: --spring.profiles.active=uat
+#               or SPRING_PROFILES_ACTIVE=uat)
+# User Acceptance Testing environment. Production-like configuration for
+# client sign-off, with Swagger enabled and SQL logging off. Provide hosts
+# and secrets via environment variables; the defaults below are placeholders.
+# =====================================================================
+
+server:
+  port: 8082
+  tomcat:
+    connection-timeout: 120s
+    keep-alive-timeout: 300s
+    max-http-post-size: 104857600
+    max-http-header-size: 65536
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 200
+    max-connections: 10000
+  compression:
+    enabled: true
+    min-response-size: 1024
+    mime-types: application/json,application/text,text/plain
+
+spring:
+  application:
+    name: rightpath
+  datasource:
+    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-uat.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-uat?createDatabaseIfNotExist=true&useSSL=true"
+    username: ${MYSQL_USER:db-user}
+    password: ${MYSQL_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.MySQLDialect
+  mail:
+    host: ${MAIL_HOST:smtp.hostinger.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:Mahesh.konamoni@isigntech.com}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 500MB
+      max-request-size: 500MB
+  websocket:
+    session:
+      timeout: 0
+  mvc:
+    async:
+      request-timeout: 300000
+  config:
+    import: "classpath:interview-prompts.properties"
+
+# Password validator
+password:
+  minsize: 8
+  maxsize: 20
+
+# JWT Token
+jwt:
+  token: "${JWT_TOKEN:2v/++UPDcxJ8awevhoGybYEdWlvmwt1GRr1W/SbvgBVqNXzfdtAh8mtOtCucY5TSneWKF6K8XhKTOC3xwrPpUw==}"
+
+# V2 Auth (Access + Refresh). If secret is empty, falls back to jwt.token.
+rightpath:
+  security:
+    v2:
+      jwt:
+        secret: ${V2_JWT_SECRET:}
+        issuer: arightpath.com
+        audience: rightpath-web
+        access-ttl-minutes: 10080
+        clock-skew-seconds: 60
+      refresh:
+        ttl-days: 14
+        cookie-name: refresh_token
+        cookie-secure: false
+        cookie-samesite: Lax
+        cookie-path: /api
+
+logging:
+  level:
+    org.springframework.security: WARN
+    org.hibernate.SQL: "OFF"
+    org.hibernate.type.descriptor.sql.BasicBinder: "OFF"
+    com.rightpath: INFO
+
+twilio:
+  account:
+    sid: ${TWILIO_SID:}
+  auth:
+    token: ${TWILIO_TOKEN:}
+  from:
+    number: "whatsapp:+14155238886"
+
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}
+    base-url: https://api.openai.com/v1
+  model: gpt-4o
+  audio:
+    model: whisper-1
+  question:
+    timeout-seconds: 180
+    generation:
+      timeout-seconds: 300
+  tts:
+    model: tts-1-hd
+    voice: nova
+
+# AWS S3 Storage
+aws:
+  s3:
+    bucket-name: ${AWS_S3_BUCKET:airightpath-interview-uat}
+    region: ap-south-1
+    access-key: ${AWS_ACCESS_KEY:}
+    secret-key: ${AWS_SECRET_KEY:}
+    prefix:
+      interview: interview
+      exam: exam
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      enabled: false
+
+app:
+  base:
+    url: ${APP_BASE_URL:https://api-uat.airightpath.com}
+  cors:
+    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:https://uat.airightpath.com,https://www.airightpath.com,http://localhost:4200,http://localhost:5173}"
+
+# Terminal WebSocket Configuration
+terminal:
+  execution:
+    timeout-seconds: 60
+  max-sessions-per-user: 3
+
+# ATS Screening Configuration
+ats:
+  screening:
+    threshold: 60.0
+
+# Voice Interview / TTS Configuration
+interview:
+  max-duration-minutes: 60
+  max-warnings: 5
+  context-window-size: 4
+
+# Swagger / OpenAPI (enabled in UAT for client testing)
+#   UI: /swagger-ui.html   JSON: /v3/api-docs
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
