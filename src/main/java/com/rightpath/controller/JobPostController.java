@@ -1,6 +1,5 @@
 package com.rightpath.controller;
 
-import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -68,17 +67,34 @@ public class JobPostController {
     }
 
     /**
-     * Retrieves all active job postings.
-     * 
-     * @return List of job postings with HTTP 200 status
+     * Retrieves job postings, newest first (descending).
+     *
+     * <p>Pagination is optional: pass {@code page} and/or {@code size} to get a
+     * paginated response (with total counts, etc.); omit both to get the full
+     * list. Results are always sorted newest first.</p>
+     *
+     * @param page zero-based page index (optional; defaults to 0 when only size given)
+     * @param size page size (optional; defaults to 10 when only page given)
+     * @return all postings (list) when no paging params, else a page of postings
      */
     @GetMapping("/getPost")
     @PreAuthorize("hasAuthority('JOB_POST_READ')")
-    public ResponseEntity<List<JobPostDTO>> getAllJobs() {
-        log.info("Received request for all job postings");
-        List<JobPostDTO> jobs = jobPostService.getAllJobPosts();
-        log.debug("Returning {} job postings", jobs.size());
-        return ResponseEntity.ok(jobs);
+    public ResponseEntity<?> getAllJobs(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+
+        if (page == null && size == null) {
+            log.info("Received request for all job postings (no pagination)");
+            return ResponseEntity.ok(jobPostService.getAllJobPosts());
+        }
+
+        int pageIndex = page != null ? page : 0;
+        int pageSize = size != null ? size : 10;
+        if (pageIndex < 0 || pageSize < 1) {
+            throw new IllegalArgumentException("page must be >= 0 and size must be >= 1");
+        }
+        log.info("Received request for job postings page={} size={}", pageIndex, pageSize);
+        return ResponseEntity.ok(jobPostService.getJobPosts(pageIndex, pageSize));
     }
 
     /**
