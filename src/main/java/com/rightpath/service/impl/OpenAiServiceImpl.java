@@ -27,6 +27,7 @@ import com.rightpath.dto.OpenAiResponse;
 import com.rightpath.dto.Question;
 import com.rightpath.enums.PromptType;
 import com.rightpath.exceptions.AiServiceException;
+import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.JobPromptRepository;
 import com.rightpath.service.OpenAiService;
 import com.rightpath.util.PromptPlaceholderResolver;
@@ -102,7 +103,9 @@ public class OpenAiServiceImpl implements OpenAiService {
 		long start = System.currentTimeMillis();
 
 		String prompt = jobPromptRepository.findByJobPrefixAndPromptType(jobPrefix, PromptType.APTITUDE)
-				.orElseThrow(() -> new AiServiceException("Aptitude prompt not configured for jobPrefix=" + jobPrefix))
+				.orElseThrow(() -> new ResourceNotFoundException(
+						"Aptitude prompt is not configured for job '" + jobPrefix
+								+ "'. Please configure the aptitude prompt for this job before generating questions."))
 				.getPrompt();
 		prompt = placeholderResolver.resolveJobPlaceholders(prompt, jobPrefix);
 		log.info("generateQuestions - prompt loaded, length={}, took={}ms", prompt.length(),
@@ -152,7 +155,9 @@ public class OpenAiServiceImpl implements OpenAiService {
 		long start = System.currentTimeMillis();
 
 		String prompt = jobPromptRepository.findByJobPrefixAndPromptType(jobPrefix, PromptType.CODING)
-				.orElseThrow(() -> new AiServiceException("Coding prompt not configured for jobPrefix=" + jobPrefix))
+				.orElseThrow(() -> new ResourceNotFoundException(
+						"Coding prompt is not configured for job '" + jobPrefix
+								+ "'. Please configure the coding prompt for this job before generating questions."))
 				.getPrompt();
 		prompt = placeholderResolver.resolveJobPlaceholders(prompt, jobPrefix);
 		log.info("generateCodingQuestions - prompt loaded, length={}, took={}ms", prompt.length(),
