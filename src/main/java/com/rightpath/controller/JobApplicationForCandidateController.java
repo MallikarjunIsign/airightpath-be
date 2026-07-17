@@ -3,6 +3,7 @@
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -441,28 +442,41 @@ public class JobApplicationForCandidateController {
     @PostMapping("/send-exam-link")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
     public ResponseEntity<?> sendExamLink(@RequestBody BulkMailRequestDTO request) {
-        List<String> errors = new ArrayList<>();
         String jobPrefix = request.getJobPrefix();
 
-        boolean hasValidationError = false;
+        List<String> sent = new ArrayList<>();
+        List<Map<String, String>> failed = new ArrayList<>();
+
         for (String email : request.getEmails()) {
             try {
+                // Only marks EXAM_SENT if an assessment exists and the email is sent
+                // (enforced transactionally in the service).
                 applicationForCandidateService.sendExamLink(jobPrefix, email, request.getDateTime());
                 sendWebSocketNotification(email, jobPrefix, "EXAM_SENT", "Exam link sent to candidate");
-            } catch (IllegalStateException e) {
-                errors.add(email + ": " + e.getMessage());
-                hasValidationError = true;
+                sent.add(email);
             } catch (Exception e) {
-                errors.add(email + ": " + e.getMessage());
+                failed.add(Map.of("email", email, "reason", e.getMessage() == null ? "Unknown error" : e.getMessage()));
             }
         }
 
-        if (errors.isEmpty()) {
-            return ResponseEntity.ok("Exam link sent successfully.");
+        Map<String, Object> body = new HashMap<>();
+        body.put("sent", sent);
+        body.put("failed", failed);
+        body.put("sentCount", sent.size());
+        body.put("failedCount", failed.size());
+
+        if (failed.isEmpty()) {
+            body.put("message", "Exam link sent successfully.");
+            return ResponseEntity.ok(body);
         }
-        HttpStatus status = hasValidationError ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR;
-        return ResponseEntity.status(status)
-            .body(Map.of("message", "Some emails failed", "errors", errors));
+        if (!sent.isEmpty()) {
+            // Some succeeded, some failed.
+            body.put("message", "Exam link sent to some candidates; others failed.");
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(body);
+        }
+        // Nothing was sent — typically because no assessment is assigned yet.
+        body.put("message", "No exam links were sent. Assign an exam to these candidates first.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @PostMapping("/schedule-interview")
