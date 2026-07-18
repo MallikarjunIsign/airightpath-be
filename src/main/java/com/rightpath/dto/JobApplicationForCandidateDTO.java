@@ -47,15 +47,21 @@ public class JobApplicationForCandidateDTO {
 	    
 	    private String jobPrefix; 
 	    
-	    private double matchPercent; 
-	    private String status; 
-	    
-	    
-	    private String confirmationStatus; 
+	    private double matchPercent;
+	    private String status;
+
+	    // Human-readable label of the CURRENT pipeline stage (derived from status),
+	    // so the UI can highlight which column is active. e.g. "Exam Completed".
+	    private String currentStage;
+	    // Separate ATS resume-scan status and shortlisting status columns.
+	    private String atsScanStatus;
+	    private String shortlistStatus;
+
+	    private String confirmationStatus;
 	    private String acknowledgedStatus;
 	    private String reconfirmationStatus;
 	    private String examLinkStatus;
-	    private String examCompletedStatus; 
+	    private String examCompletedStatus;
 	    private String rejectionStatus;
 	    private String writtenTestStatus;
 	    private String interview;
@@ -85,7 +91,59 @@ public class JobApplicationForCandidateDTO {
 	        this.rejectionStatus = entity.getRejectionStatus();
 	        this.writtenTestStatus = entity.getWrittenTestStatus();
 	        this.interview = entity.getInterview();
+	        this.currentStage = humanizeStage(this.status);
+	        this.atsScanStatus = deriveAtsScanStatus(entity.getAtsScanStatus(), this.status);
+	        this.shortlistStatus = deriveShortlistStatus(entity.getShortlistStatus(), this.status);
+	    }
 
+	    /** Turns an enum name like {@code EXAM_COMPLETED} into {@code "Exam Completed"}. */
+	    public static String humanizeStage(String statusName) {
+	        if (statusName == null || statusName.isBlank()) {
+	            return null;
+	        }
+	        String[] words = statusName.toLowerCase().split("_");
+	        StringBuilder sb = new StringBuilder();
+	        for (String w : words) {
+	            if (w.isEmpty()) {
+	                continue;
+	            }
+	            if (sb.length() > 0) {
+	                sb.append(' ');
+	            }
+	            sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
+	        }
+	        return sb.toString();
+	    }
+
+	    /**
+	     * ATS scan status: the stored value if present, otherwise derived — anything
+	     * past APPLIED has necessarily been screened.
+	     */
+	    public static String deriveAtsScanStatus(String stored, String statusName) {
+	        if (stored != null && !stored.isBlank()) {
+	            return stored;
+	        }
+	        if (statusName == null || "APPLIED".equalsIgnoreCase(statusName)) {
+	            return "Pending";
+	        }
+	        return "Screening Completed";
+	    }
+
+	    /**
+	     * Shortlist status: the stored value if present, otherwise derived — any stage
+	     * beyond APPLIED (other than REJECTED, which is ambiguous) implies shortlisted.
+	     */
+	    public static String deriveShortlistStatus(String stored, String statusName) {
+	        if (stored != null && !stored.isBlank()) {
+	            return stored;
+	        }
+	        if (statusName == null || "APPLIED".equalsIgnoreCase(statusName)) {
+	            return "Pending";
+	        }
+	        if ("REJECTED".equalsIgnoreCase(statusName)) {
+	            return null;
+	        }
+	        return "Shortlisted";
 	    }
 
 }

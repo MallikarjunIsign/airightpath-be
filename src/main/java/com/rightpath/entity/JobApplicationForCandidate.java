@@ -62,8 +62,13 @@ public class JobApplicationForCandidate {
 	    
 	    @Enumerated(EnumType.STRING)
 	    private ApplicationStatus status;
-	    
-	    private String confirmationStatus; 
+
+	    // ATS resume-scan outcome (e.g. "Screening Completed") — independent of shortlisting.
+	    private String atsScanStatus;
+	    // Shortlisting outcome after ATS screening (e.g. "Shortlisted" / "Not Shortlisted").
+	    private String shortlistStatus;
+
+	    private String confirmationStatus;
 	    private String acknowledgedStatus;
 	    private String reconfirmationStatus;
 	    private String examLinkStatus;

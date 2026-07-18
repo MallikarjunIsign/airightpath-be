@@ -247,6 +247,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setRejectionStatus(app.getRejectionStatus());
         dto.setWrittenTestStatus(app.getWrittenTestStatus());
         dto.setInterview(app.getInterview());
+        dto.setCurrentStage(JobApplicationForCandidateDTO.humanizeStage(dto.getStatus()));
+        dto.setAtsScanStatus(JobApplicationForCandidateDTO.deriveAtsScanStatus(app.getAtsScanStatus(), dto.getStatus()));
+        dto.setShortlistStatus(JobApplicationForCandidateDTO.deriveShortlistStatus(app.getShortlistStatus(), dto.getStatus()));
         if (app.getJobPost() != null) {
             dto.setJobPrefix(app.getJobPost().getJobPrefix());
             dto.setJobTitle(app.getJobPost().getJobTitle());
@@ -325,9 +328,13 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 
             // Only run ATS screening on candidates still in APPLIED status
             if (app.getStatus() == ApplicationStatus.APPLIED) {
-                ApplicationStatus finalStatus = (matchPercent >= atsThreshold) ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED;
+                boolean shortlisted = matchPercent >= atsThreshold;
+                ApplicationStatus finalStatus = shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED;
                 StatusTransitionValidator.validate(app.getStatus(), finalStatus);
                 app.setStatus(finalStatus);
+                // Record the ATS scan and shortlist outcomes in their own columns.
+                app.setAtsScanStatus("Screening Completed");
+                app.setShortlistStatus(shortlisted ? "Shortlisted" : "Not Shortlisted");
                 applicationForCandidateRepository.save(app);
             }
 
