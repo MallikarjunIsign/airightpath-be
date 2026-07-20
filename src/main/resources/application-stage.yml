@@ -27,7 +27,7 @@ spring:
   application:
     name: rightpath
   datasource:
-    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-stage.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-stage?createDatabaseIfNotExist=true&useSSL=true"
+    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-dev.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-stage?createDatabaseIfNotExist=true&useSSL=true"
     username: ${MYSQL_USER:db-user}
     password: ${MYSQL_PASSWORD:ZkiuxIOCYULiC1oXRkKx}
   jpa:
