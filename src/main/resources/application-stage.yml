@@ -27,7 +27,7 @@ spring:
   application:
     name: rightpath
   datasource:
-    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-dev.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-stage?createDatabaseIfNotExist=true&useSSL=true"
+    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-dev.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-dev?createDatabaseIfNotExist=true&useSSL=true"
     username: ${MYSQL_USER:db-user}
     password: ${MYSQL_PASSWORD:ZkiuxIOCYULiC1oXRkKx}
   jpa:
@@ -145,7 +145,7 @@ app:
   base:
     url: ${APP_BASE_URL:https://api-stage.airightpath.com}
   cors:
-    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:https://stage.airightpath.com,https://www.airightpath.com,http://localhost:4200,http://localhost:5173}"
+    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:https://dev.airightpath.com,https://stage.airightpath.com,https://www.airightpath.com,http://localhost:4200,http://localhost:5173}"
 
 # Terminal WebSocket Configuration
 terminal:
