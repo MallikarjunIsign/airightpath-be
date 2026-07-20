@@ -5,7 +5,7 @@
 # =====================================================================
 
 server:
-  port: 8082
+  port: 8081
   tomcat:
     connection-timeout: 120s
     keep-alive-timeout: 300s
