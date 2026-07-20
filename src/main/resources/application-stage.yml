@@ -29,7 +29,7 @@ spring:
   datasource:
     url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-stage.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-stage?createDatabaseIfNotExist=true&useSSL=true"
     username: ${MYSQL_USER:db-user}
-    password: ${MYSQL_PASSWORD:}
+    password: ${MYSQL_PASSWORD:ZkiuxIOCYULiC1oXRkKx}
   jpa:
     hibernate:
       ddl-auto: update
@@ -42,7 +42,7 @@ spring:
     host: ${MAIL_HOST:smtp.hostinger.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:Mahesh.konamoni@isigntech.com}
-    password: ${MAIL_PASSWORD:}
+    password: ${MAIL_PASSWORD:Mahesh1234@}
     properties:
       mail:
         smtp:
