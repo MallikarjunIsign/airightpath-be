@@ -123,7 +123,7 @@ openai:
 # AWS S3 Storage
 aws:
   s3:
-    bucket-name: ${AWS_S3_BUCKET:airightpath-interview-stage}
+    bucket-name: ${AWS_S3_BUCKET:airightpath-interview}
     region: ap-south-1
     access-key: ${AWS_ACCESS_KEY:}
     secret-key: ${AWS_SECRET_KEY:}
