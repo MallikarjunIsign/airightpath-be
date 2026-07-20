@@ -2,6 +2,8 @@ package com.rightpath.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+
 import com.rightpath.dto.JobPostDTO;
 import com.rightpath.entity.JobPost;
 
@@ -31,13 +33,20 @@ public interface JobPostService {
     public JobPostDTO convertToDTO(JobPost post);
 
     /**
-     * Retrieves all job posts from the system.
+     * Retrieves all job posts, newest first (by id descending).
      *
-     * @return A list of JobPostDTOs.
-     * 
-     * // Log Example: log.info("Fetching all job posts");
+     * @return A list of JobPostDTOs in descending order.
      */
     public List<JobPostDTO> getAllJobPosts();
+
+    /**
+     * Retrieves a page of job posts, newest first (by id descending).
+     *
+     * @param page zero-based page index.
+     * @param size page size.
+     * @return A page of JobPostDTOs in descending order.
+     */
+    public Page<JobPostDTO> getJobPosts(int page, int size);
 
     /**
      * Finds a job post by its unique job prefix.

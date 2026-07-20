@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -27,6 +29,7 @@ import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.EmailType;
 import com.rightpath.exceptions.ApplicationDeadlinePassedException;
 import com.rightpath.exceptions.ResourceNotFoundException;
+import com.rightpath.repository.AssessmentRepository;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.repository.JobPostRepository;
 import com.rightpath.repository.UsersRepository;
@@ -60,10 +63,15 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
     
     @Autowired
     private EmailServiceImpl emailService;
-    
+
     @Autowired
     private WhatsAppService whatsAppService;
-    
+
+    @Autowired
+    private AssessmentRepository assessmentRepository;
+
+    private static final Logger logger = LoggerFactory.getLogger(JobApplicationForCandidateServiceImpl.class);
+
 
     private final String baseUrl;
 
@@ -239,6 +247,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setRejectionStatus(app.getRejectionStatus());
         dto.setWrittenTestStatus(app.getWrittenTestStatus());
         dto.setInterview(app.getInterview());
+        dto.setCurrentStage(JobApplicationForCandidateDTO.humanizeStage(dto.getStatus()));
+        dto.setAtsScanStatus(JobApplicationForCandidateDTO.deriveAtsScanStatus(app.getAtsScanStatus(), dto.getStatus()));
+        dto.setShortlistStatus(JobApplicationForCandidateDTO.deriveShortlistStatus(app.getShortlistStatus(), dto.getStatus()));
         if (app.getJobPost() != null) {
             dto.setJobPrefix(app.getJobPost().getJobPrefix());
             dto.setJobTitle(app.getJobPost().getJobTitle());
@@ -317,9 +328,13 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 
             // Only run ATS screening on candidates still in APPLIED status
             if (app.getStatus() == ApplicationStatus.APPLIED) {
-                ApplicationStatus finalStatus = (matchPercent >= atsThreshold) ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED;
+                boolean shortlisted = matchPercent >= atsThreshold;
+                ApplicationStatus finalStatus = shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED;
                 StatusTransitionValidator.validate(app.getStatus(), finalStatus);
                 app.setStatus(finalStatus);
+                // Record the ATS scan and shortlist outcomes in their own columns.
+                app.setAtsScanStatus("Screening Completed");
+                app.setShortlistStatus(shortlisted ? "Shortlisted" : "Not Shortlisted");
                 applicationForCandidateRepository.save(app);
             }
 
@@ -673,6 +688,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	    
 
 	    @Override
+	    @Transactional
 	    public void sendExamLink(String jobPrefix, String email, String dateTime) {
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository
 	                .findByJobPrefixAndEmail(jobPrefix, email);
@@ -682,6 +698,15 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
+
+	        // Source of truth: an exam must actually be assigned before we can send its
+	        // link. Without this guard the candidate gets marked EXAM_SENT but has no
+	        // assessment to take. Do NOT change status if none exists.
+	        if (!assessmentRepository.existsByCandidateEmailAndJobPrefix(email, jobPrefix)) {
+	            throw new IllegalStateException(
+	                    "No assessment assigned for " + email + " on job " + jobPrefix
+	                            + ". Assign an exam first (POST /api/assign) before sending the exam link.");
+	        }
 
 	        // Validate workflow transition: RECONFIRMED → EXAM_SENT
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.EXAM_SENT);
@@ -694,18 +719,28 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        }
 	        LocalDateTime endTime = startTime.plusHours(1);
 
+	        // Send the exam-schedule email FIRST. If it fails it throws, the transaction
+	        // rolls back, and the candidate is NOT left marked EXAM_SENT.
+	        emailService.sendExamLink(email, startTime, endTime, jobPrefix);
+
+	        // Only after the email succeeds do we commit the status change.
 	        application.setStatus(ApplicationStatus.EXAM_SENT);
 	        application.setExamLinkStatus("Exam Link Sent");
 	        applicationForCandidateRepository.save(application);
 
-	        emailService.sendExamLink(email, startTime, endTime, jobPrefix);
-
-	        whatsAppService.sendWhatsAppMessage(
-	                application.getMobileNumber(),
-	                WhatsAppService.MessageType.EXAM_SCHEDULE,
-	                startTime,
-	                endTime
-	        );
+	        // WhatsApp is a best-effort secondary channel: its failure must not undo a
+	        // successfully-sent exam link.
+	        try {
+	            whatsAppService.sendWhatsAppMessage(
+	                    application.getMobileNumber(),
+	                    WhatsAppService.MessageType.EXAM_SCHEDULE,
+	                    startTime,
+	                    endTime
+	            );
+	        } catch (Exception e) {
+	            logger.warn("WhatsApp exam-schedule notification failed for {} (job {}): {}",
+	                    email, jobPrefix, e.getMessage());
+	        }
 	    }
 
 	    //method to schedule interview

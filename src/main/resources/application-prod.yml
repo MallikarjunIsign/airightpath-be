@@ -1,9 +1,7 @@
 # =====================================================================
-# STAGE profile  (activate with: --spring.profiles.active=stage
-#                 or SPRING_PROFILES_ACTIVE=stage)
-# Pre-production / integration-testing environment. Modeled on prod but
-# with Swagger enabled and SQL logging off. Provide hosts and secrets via
-# environment variables; the defaults below are placeholders.
+# PROD profile (activate with --spring.profiles.active=prod)
+# Production. Quiet framework logs, SQL off, Swagger DISABLED.
+# Provide secrets via environment variables.
 # =====================================================================
 
 server:
@@ -11,8 +9,7 @@ server:
   tomcat:
     connection-timeout: 120s
     keep-alive-timeout: 300s
-    max-http-form-post-size: 104857600
-    max-http-header-size: 65536
+    max-http-form-post-sizeze: 65536
     threads:
       max: 200
       min-spare: 20
@@ -27,9 +24,9 @@ spring:
   application:
     name: rightpath
   datasource:
-    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-stage.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-stage?createDatabaseIfNotExist=true&useSSL=true"
+    url: "jdbc:mysql://${MYSQL_HOST:ai-rightpath-db-dev.cxeq082ue6js.ap-south-1.rds.amazonaws.com}:${MYSQL_PORT:3306}/Rightpath-dev?createDatabaseIfNotExist=true&useSSL=true"
     username: ${MYSQL_USER:db-user}
-    password: ${MYSQL_PASSWORD:}
+    password: ${MYSQL_PASSWORD:ZkiuxIOCYULiC1oXRkKx}
   jpa:
     hibernate:
       ddl-auto: update
@@ -42,7 +39,7 @@ spring:
     host: ${MAIL_HOST:smtp.hostinger.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:Mahesh.konamoni@isigntech.com}
-    password: ${MAIL_PASSWORD:}
+    password: ${MAIL_PASSWORD:Mahesh1234@}
     properties:
       mail:
         smtp:
@@ -70,7 +67,7 @@ password:
 
 # JWT Token
 jwt:
-  token: "${JWT_TOKEN:2v/++UPDcxJ8awevhoGybYEdWlvmwt1GRr1W/SbvgBVqNXzfdtAh8mtOtCucY5TSneWKF6K8XhKTOC3xwrPpUw==}"
+  token: "2v/++UPDcxJ8awevhoGybYEdWlvmwt1GRr1W/SbvgBVqNXzfdtAh8mtOtCucY5TSneWKF6K8XhKTOC3xwrPpUw=="
 
 # V2 Auth (Access + Refresh). If secret is empty, falls back to jwt.token.
 rightpath:
@@ -89,13 +86,16 @@ rightpath:
         cookie-samesite: Lax
         cookie-path: /api
 
-# Logging levels (stage = verbose for integration testing)
+# Logging levels (prod = INFO app, quiet framework).
+#   com.rightpath=INFO keeps the one-line access log per request; no debug detail.
+#   To silence the access log entirely, set the filter logger to WARN (commented below).
 logging:
   level:
     org.springframework.security: WARN
     org.hibernate.SQL: "OFF"
     org.hibernate.type.descriptor.sql.BasicBinder: "OFF"
-    com.rightpath: DEBUG
+    com.rightpath: INFO
+    # com.rightpath.filter.RequestResponseLoggingFilter: WARN
 
 twilio:
   account:
@@ -123,7 +123,7 @@ openai:
 # AWS S3 Storage
 aws:
   s3:
-    bucket-name: ${AWS_S3_BUCKET:airightpath-interview-stage}
+    bucket-name: airightpath-interview
     region: ap-south-1
     access-key: ${AWS_ACCESS_KEY:}
     secret-key: ${AWS_SECRET_KEY:}
@@ -143,9 +143,9 @@ management:
 
 app:
   base:
-    url: ${APP_BASE_URL:https://api-stage.airightpath.com}
+    url: https://api.airightpath.com
   cors:
-    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:https://stage.airightpath.com,https://www.airightpath.com,http://localhost:4200,http://localhost:5173}"
+    allowed-origins: "http://localhost:4200,http://localhost:5173,http://192.168.1.8:5173,https://www.airightpath.com,https://dev.airightpath.com"
 
 # Terminal WebSocket Configuration
 terminal:
@@ -164,15 +164,10 @@ interview:
   max-warnings: 5
   context-window-size: 4
 
-# Swagger / OpenAPI (enabled in stage for testing)
-#   UI: /swagger-ui.html   JSON: /v3/api-docs
+# Swagger / OpenAPI - DISABLED in production
+# (OpenApiConfig is also excluded in prod via @Profile("!prod"))
 springdoc:
   api-docs:
-    enabled: true
-    path: /v3/api-docs
+    enabled: false
   swagger-ui:
-    enabled: true
-    path: /swagger-ui.html
-    operationsSorter: method
-    tagsSorter: alpha
-    display-request-duration: true
+    enabled: false

@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.rightpath.dto.AtsResultDto;
 import com.rightpath.service.impl.ATSServiceImpl;
 import com.rightpath.service.impl.EmailServiceImpl;
 
@@ -54,34 +55,42 @@ public class ATSController {
         return ResponseEntity.ok(response);
     }
 
+    /** Shortlisting threshold (percentage) for batch resume screening. */
+    private static final double MATCH_THRESHOLD = 70.0;
+
     /**
-     * Uploads multiple resumes and a job description.
-     * Returns names of resumes that scored 70% or above.
-     * 
+     * Uploads multiple resumes and a job description and screens each one.
+     * Returns every resume with its ATS score and whether it met the threshold,
+     * so the client can display scores (not just the matched filenames).
+     *
      * @param resumes          Array of resumes to process.
      * @param jobDescription   The job description content.
-     * @return                 List of matching resume filenames or error.
+     * @return                 One {@link AtsResultDto} per uploaded resume.
      */
     @PostMapping("/upload-multiple-resumes")
     @PreAuthorize("hasAuthority('ATS_UPLOAD_MULTI')")
-    public ResponseEntity<List<String>> uploadFiles(
+    public ResponseEntity<List<AtsResultDto>> uploadFiles(
             @RequestParam("resumes") MultipartFile[] resumes,
             @RequestParam("jobDescription") String jobDescription) throws Exception {
 
-        logger.info("Received {} resumes for batch processing.", resumes.length);
-        List<String> matchingResumes = new ArrayList<>();
-
-        for (MultipartFile resume : resumes) {
-            double score = atsService.processFiles(resume, jobDescription);
-            logger.debug("Processed resume '{}'. Score: {}", resume.getOriginalFilename(), score);
-
-            if (score >= 70.0) {
-                matchingResumes.add(resume.getOriginalFilename());
-            }
+        if (jobDescription == null || jobDescription.trim().isEmpty()) {
+            throw new IllegalArgumentException("Job description cannot be empty.");
         }
 
-        logger.info("Batch processing completed. {} resumes matched above threshold.", matchingResumes.size());
-        return ResponseEntity.ok(matchingResumes);
+        logger.info("Received {} resumes for batch processing.", resumes.length);
+        List<AtsResultDto> results = new ArrayList<>();
+
+        for (MultipartFile resume : resumes) {
+            AtsResultDto result = atsService.screenResume(resume, jobDescription, MATCH_THRESHOLD);
+            logger.debug("Processed resume '{}'. email: {} score: {} matched: {}",
+                    result.fileName(), result.email(), result.score(), result.matched());
+            results.add(result);
+        }
+
+        long matchedCount = results.stream().filter(AtsResultDto::matched).count();
+        logger.info("Batch processing completed. {} of {} resumes matched above threshold.",
+                matchedCount, results.size());
+        return ResponseEntity.ok(results);
     }
 
     /**

@@ -139,4 +139,15 @@ public interface AssessmentRepository extends JpaRepository<Assessment, Long> {
 
     long countByCandidateEmailAndJobPrefixAndExamAttendedFalse(String candidateEmail, String jobPrefix);
 
+    /**
+     * Whether any assessment has been assigned to a candidate for a given job.
+     * Used to guard the send-exam-link flow so a candidate is never marked
+     * EXAM_SENT without an actual exam to take.
+     *
+     * @param candidateEmail the candidate's email
+     * @param jobPrefix      the job identifier prefix
+     * @return true if at least one assessment exists for the pair
+     */
+    boolean existsByCandidateEmailAndJobPrefix(String candidateEmail, String jobPrefix);
+
 }

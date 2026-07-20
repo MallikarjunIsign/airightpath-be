@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import com.rightpath.dto.JobPostDTO;
@@ -43,9 +46,17 @@ public class JobPostServiceImpl implements JobPostService {
 		return repository.save(jobPost);
 	}
 
+	// Newest first: id is IDENTITY-generated, so higher id = more recently created.
+	private static final Sort NEWEST_FIRST = Sort.by(Sort.Direction.DESC, "id");
+
 	@Override
 	public List<JobPostDTO> getAllJobPosts() {
-		return repository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList());
+		return repository.findAll(NEWEST_FIRST).stream().map(this::convertToDTO).collect(Collectors.toList());
+	}
+
+	@Override
+	public Page<JobPostDTO> getJobPosts(int page, int size) {
+		return repository.findAll(PageRequest.of(page, size, NEWEST_FIRST)).map(this::convertToDTO);
 	}
 
 	@Override

@@ -11,7 +11,7 @@ server:
   tomcat:
     connection-timeout: 120s
     keep-alive-timeout: 300s
-    max-http-post-size: 104857600
+    max-http-form-post-size: 104857600
     max-http-header-size: 65536
     threads:
       max: 200

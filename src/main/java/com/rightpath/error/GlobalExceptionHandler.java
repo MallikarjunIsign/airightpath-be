@@ -375,6 +375,47 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * An upstream HTTP call (e.g. OpenAI via WebClient) returned an error status.
+     * Common causes: 401 (missing/invalid API key), 404/400 (bad model name),
+     * 429 (rate limited). We surface the upstream status so the operator can act,
+     * but never echo the upstream response body (may contain sensitive detail).
+     */
+    @ExceptionHandler(org.springframework.web.reactive.function.client.WebClientResponseException.class)
+    public ResponseEntity<ApiError> handleUpstream(
+            org.springframework.web.reactive.function.client.WebClientResponseException ex, HttpServletRequest req) {
+        int upstreamStatus = ex.getStatusCode().value();
+        logger.error("Upstream service error at {}: status={} body={}",
+                req.getRequestURI(), upstreamStatus, ex.getResponseBodyAsString());
+
+        String hint;
+        if (upstreamStatus == 401 || upstreamStatus == 403) {
+            hint = "the AI service rejected the credentials (check the API key)";
+        } else if (upstreamStatus == 404 || upstreamStatus == 400) {
+            hint = "the AI request was invalid (check the configured model/parameters)";
+        } else if (upstreamStatus == 429) {
+            hint = "the AI service is rate limiting requests, please try again shortly";
+        } else {
+            hint = "the AI service returned an error, please try again later";
+        }
+        return build(HttpStatus.BAD_GATEWAY, ErrorCodes.AI_SERVICE_ERROR,
+                "AI service request failed (upstream status " + upstreamStatus + "): " + hint + ".", req, null);
+    }
+
+    /**
+     * An upstream HTTP call never got a response — DNS resolution failure,
+     * connection refused/timeout, TLS error, etc. Typically means the server has
+     * no network/internet route to the AI service (rather than a code bug).
+     */
+    @ExceptionHandler(org.springframework.web.reactive.function.client.WebClientRequestException.class)
+    public ResponseEntity<ApiError> handleUpstreamUnreachable(
+            org.springframework.web.reactive.function.client.WebClientRequestException ex, HttpServletRequest req) {
+        logger.error("Upstream service unreachable at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.AI_SERVICE_ERROR,
+                "Could not reach the AI service (network/DNS error). "
+                        + "Please check the server's internet connectivity and try again.", req, null);
+    }
+
+    /**
      * Final safety net. The real cause is logged with the full stack trace, but
      * the response deliberately hides internals to avoid leaking implementation
      * details to clients.
