@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import com.rightpath.dto.ResumeDownload;
 import com.rightpath.entity.Resume;
 
 public interface ResumeService {
@@ -31,12 +32,20 @@ public interface ResumeService {
     Resume updateResume(MultipartFile file, String email) throws IOException;
 
     /**
-     * Retrieves the resume associated with a given email.
+     * Retrieves the resume the candidate submitted with their job application, as a
+     * downloadable payload (bytes + filename + content type).
      *
-     * @param email The email for which the resume is being retrieved.
-     * @return The Resume entity.
+     * <p>Reads {@code JobApplicationForCandidate.resumeData} — the same source the
+     * ATS engine scores — so a candidate who has an ATS score can always view their
+     * resume. If the candidate has applied to several jobs, the most recently
+     * submitted resume-bearing application is chosen deterministically.
+     *
+     * @param email the candidate's email
+     * @return the resume payload for download
+     * @throws com.rightpath.exceptions.ResourceNotFoundException if the candidate
+     *         has no application carrying a resume (surfaced as HTTP 404)
      */
-    Resume getResumeByEmail(String email);
+    ResumeDownload getResumeForDownload(String email);
 
     /**
      * Retrieves all resumes along with associated user information.

@@ -6,12 +6,17 @@ import java.util.List;
 
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.rightpath.dto.ResumeDownload;
+import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.entity.JobPost;
 import com.rightpath.entity.Resume;
 import com.rightpath.entity.Users;
+import com.rightpath.exceptions.ResourceNotFoundException;
+import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.repository.JobPostRepository;
 import com.rightpath.repository.ResumeRepository;
 import com.rightpath.repository.UsersRepository;
@@ -28,7 +33,10 @@ public class ResumeServiceImpl implements ResumeService {
 	
 	@Autowired
 	private JobPostRepository jobPostRepository;
-	
+
+	@Autowired
+	private JobApplicationForCandidateRepository applicationForCandidateRepository;
+
 	private final Tika tika = new Tika();
 
 	/**
@@ -102,19 +110,33 @@ public class ResumeServiceImpl implements ResumeService {
 	}
 
 	/**
-	 * Retrieves the resume associated with a user identified by their email.
+	 * Retrieves the resume the candidate submitted with their job application, as a
+	 * downloadable payload.
 	 *
-	 * @param email The email of the user whose resume needs to be retrieved.
-	 * @return The Resume entity.
-	 * @throws IllegalArgumentException If the user or resume is not found.
+	 * <p>Reads {@code JobApplicationForCandidate.resumeData} — the same column the ATS
+	 * engine scores — so any candidate with an ATS score can view their resume. When a
+	 * candidate has applied to multiple jobs the choice is deterministic: the most
+	 * recently submitted resume-bearing application (highest id) wins.
+	 *
+	 * @param email The candidate's email.
+	 * @return The resume payload (bytes + filename + content type).
+	 * @throws ResourceNotFoundException If no application carries a resume (HTTP 404).
 	 */
 	@Override
-	public Resume getResumeByEmail(String email) {
-		Users user = userRepository.findByEmail(email)
-				.orElseThrow(() -> new IllegalArgumentException("User not found with email: " + email));
+	public ResumeDownload getResumeForDownload(String email) {
+		JobApplicationForCandidate application = applicationForCandidateRepository
+				.findResumeBearingApplicationsByEmail(email).stream()
+				.findFirst()
+				.orElseThrow(() -> new ResourceNotFoundException("Resume not found for candidate: " + email));
 
-		return resumeRepository.findByUsers(user)
-				.orElseThrow(() -> new IllegalArgumentException("Resume not found for user: " + email));
+		String fileName = (application.getResumeFileName() != null && !application.getResumeFileName().isBlank())
+				? application.getResumeFileName()
+				: "resume";
+		String contentType = (application.getContentType() != null && !application.getContentType().isBlank())
+				? application.getContentType()
+				: MediaType.APPLICATION_OCTET_STREAM_VALUE;
+
+		return new ResumeDownload(application.getResumeData(), fileName, contentType);
 	}
 
 	@Override

@@ -6,7 +6,6 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.rightpath.dto.ResumeDownload;
 import com.rightpath.entity.Resume;
 import com.rightpath.service.ResumeService;
 
@@ -82,15 +82,16 @@ public class ResumeController {
     @GetMapping("/view-resume/{email}")
     @PreAuthorize("hasAuthority('RESUME_VIEW')")
     public ResponseEntity<byte[]> viewResume(@PathVariable String email) {
-        Resume resume = resumeService.getResumeByEmail(email);
-        if (resume == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-        }
+        // Serves the resume the candidate submitted with their application
+        // (JobApplicationForCandidate.resumeData) — the same source the ATS engine
+        // scores. A genuinely missing resume throws ResourceNotFoundException, which
+        // the global handler maps to 404 (not the old misleading 400).
+        ResumeDownload resume = resumeService.getResumeForDownload(email);
 
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(resume.getFileType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resume.getFileName() + "\"")
-                .body(resume.getData());
+                .contentType(MediaType.parseMediaType(resume.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resume.fileName() + "\"")
+                .body(resume.data());
     }
 
     // ===================================================================== //
