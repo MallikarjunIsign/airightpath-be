@@ -43,6 +43,11 @@ public class JobApplicationForCandidate {
 	    private String jobRole;
 	    private String resumeFileName;
 	    private String mobileNumber;
+
+	    // Optional referral details captured at apply time. Both nullable: a candidate
+	    // may apply with neither, or supply who referred them (id and/or name).
+	    private String referralId;
+	    private String referralName;
 	    
 
 	    @Lob

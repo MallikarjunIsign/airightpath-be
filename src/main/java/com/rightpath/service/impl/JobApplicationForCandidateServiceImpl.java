@@ -124,6 +124,8 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
                 .address(dto.getAddress())
                 .jobRole(dto.getJobRole())
                 .mobileNumber(dto.getMobileNumber())
+                .referralId(dto.getReferralId())
+                .referralName(dto.getReferralName())
                 .user(user)
                 .jobPost(jobPost) // set relationship with JobPost
                 .build();
@@ -244,6 +246,8 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setUserEmail(app.getUser().getEmail());
         dto.setEmail(app.getUser().getEmail());
         dto.setMobileNumber(app.getMobileNumber());
+        dto.setReferralId(app.getReferralId());
+        dto.setReferralName(app.getReferralName());
         dto.setRejectionStatus(app.getRejectionStatus());
         dto.setWrittenTestStatus(app.getWrittenTestStatus());
         dto.setInterview(app.getInterview());

@@ -44,8 +44,12 @@ public class JobApplicationForCandidateDTO {
 	    private String contentType;
 	    private String userEmail;
 	    private String mobileNumber;
-	    
-	    private String jobPrefix; 
+
+	    // Optional referral details — who referred this candidate. Both nullable.
+	    private String referralId;
+	    private String referralName;
+
+	    private String jobPrefix;
 	    
 	    private double matchPercent;
 	    private String status;
@@ -81,6 +85,8 @@ public class JobApplicationForCandidateDTO {
 	        this.resumeFileName = entity.getResumeFileName();
 	        this.contentType = entity.getContentType();
 	        this.userEmail = entity.getUser().getEmail();
+	        this.referralId = entity.getReferralId();
+	        this.referralName = entity.getReferralName();
 	        this.jobPrefix = entity.getJobPost().getJobPrefix();
 	        this.status = entity.getStatus() != null ? entity.getStatus().name() : null;
 	        this.confirmationStatus = entity.getConfirmationStatus();
