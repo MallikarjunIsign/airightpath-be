@@ -340,12 +340,16 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         for (JobApplicationForCandidate app : applicants) {
             double matchPercent = calculateMatchPercent(app, requiredSkills, synonyms);
 
-            // Only run ATS screening on candidates still in APPLIED status
-            if (app.getStatus() == ApplicationStatus.APPLIED) {
+            // Recompute and persist the shortlist decision on EVERY run so the
+            // status matches the current score (e.g. after a resume edit + re-screen).
+            // Only candidates in the ATS screening phase are (re)evaluated; see
+            // isAtsScreenable for what is intentionally left untouched.
+            if (isAtsScreenable(app)) {
                 boolean shortlisted = matchPercent >= atsThreshold;
-                ApplicationStatus finalStatus = shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED;
-                StatusTransitionValidator.validate(app.getStatus(), finalStatus);
-                app.setStatus(finalStatus);
+                // Set directly rather than via StatusTransitionValidator: a re-screen is
+                // an in-phase re-evaluation (REJECTED->SHORTLISTED, or same->same), which
+                // the forward-only pipeline validator intentionally forbids.
+                app.setStatus(shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED);
                 // Record the ATS scan and shortlist outcomes in their own columns.
                 app.setAtsScanStatus("Screening Completed");
                 app.setShortlistStatus(shortlisted ? "Shortlisted" : "Not Shortlisted");
@@ -357,6 +361,36 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
             processedList.add(dto);
         }
         return processedList;
+    }
+
+    /**
+     * Whether an application may be (re)evaluated by ATS screening on this run.
+     *
+     * <ul>
+     *   <li>APPLIED — the first screen.</li>
+     *   <li>SHORTLISTED / REJECTED that ATS itself produced (atsScanStatus =
+     *       "Screening Completed") and that was not subsequently closed by a
+     *       manual or written-test rejection (rejectionStatus set) — these may be
+     *       re-screened, e.g. after a resume edit, so the decision tracks the new score.</li>
+     * </ul>
+     *
+     * Everything else is left untouched: candidates who have progressed past
+     * shortlisting (ACKNOWLEDGED onward) must not be reverted, referral
+     * auto-shortlists (never ATS-screened) keep their status, and manually/test-
+     * rejected candidates are not resurrected.
+     */
+    private boolean isAtsScreenable(JobApplicationForCandidate app) {
+        ApplicationStatus status = app.getStatus();
+
+        if (status == ApplicationStatus.APPLIED) {
+            return true;
+        }
+
+        boolean previouslyScreened = "Screening Completed".equals(app.getAtsScanStatus());
+        boolean inScreeningPhase = status == ApplicationStatus.SHORTLISTED || status == ApplicationStatus.REJECTED;
+        boolean manuallyClosed = app.getRejectionStatus() != null && !app.getRejectionStatus().isBlank();
+
+        return previouslyScreened && inScreeningPhase && !manuallyClosed;
     }
 
     @Override
