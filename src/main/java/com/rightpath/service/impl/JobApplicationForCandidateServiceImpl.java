@@ -27,6 +27,7 @@ import com.rightpath.entity.JobPost;
 import com.rightpath.entity.Users;
 import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.EmailType;
+import com.rightpath.enums.ReferralStatus;
 import com.rightpath.exceptions.ApplicationDeadlinePassedException;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.AssessmentRepository;
@@ -129,6 +130,14 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
                 .user(user)
                 .jobPost(jobPost) // set relationship with JobPost
                 .build();
+
+        // Default referral status to PENDING only when the candidate actually
+        // supplied referral details; a non-referred application has no referral status.
+        boolean hasReferral = (dto.getReferralId() != null && !dto.getReferralId().isBlank())
+                || (dto.getReferralName() != null && !dto.getReferralName().isBlank());
+        if (hasReferral) {
+            application.setReferralStatus(ReferralStatus.PENDING);
+        }
 
         try {
             if (dto.getResume() != null && !dto.getResume().isEmpty()) {
@@ -248,6 +257,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setMobileNumber(app.getMobileNumber());
         dto.setReferralId(app.getReferralId());
         dto.setReferralName(app.getReferralName());
+        dto.setReferralStatus(app.getReferralStatus() != null ? app.getReferralStatus().name() : null);
         dto.setRejectionStatus(app.getRejectionStatus());
         dto.setWrittenTestStatus(app.getWrittenTestStatus());
         dto.setInterview(app.getInterview());
@@ -369,6 +379,62 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         if (apps.isEmpty()) throw new ResourceNotFoundException("No application found");
 
         return convertToDTO(apps.get(0));
+    }
+
+    @Override
+    public JobApplicationForCandidateDTO updateReferralStatus(String jobPrefix, String email, String referralStatus) {
+        List<JobApplicationForCandidate> apps = applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
+        if (apps.isEmpty()) {
+            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
+        }
+
+        ReferralStatus newStatus;
+        try {
+            newStatus = ReferralStatus.valueOf(referralStatus.trim().toUpperCase());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new IllegalArgumentException(
+                    "Invalid referralStatus '" + referralStatus + "'. Allowed values: "
+                            + Arrays.toString(ReferralStatus.values()));
+        }
+
+        JobApplicationForCandidate application = apps.get(0);
+        application.setReferralStatus(newStatus);
+        applicationForCandidateRepository.save(application);
+
+        return convertToDTO(application);
+    }
+
+    @Override
+    @Transactional
+    public void shortlistCandidateWithoutAts(String jobPrefix, String email) {
+        List<JobApplicationForCandidate> applications =
+                applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
+        if (applications.isEmpty()) {
+            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
+        }
+
+        JobApplicationForCandidate application = applications.get(0);
+
+        // Manual shortlist bypasses ATS but still respects the workflow: only an
+        // APPLIED application may move to SHORTLISTED. Anything else (already
+        // shortlisted, rejected, or further along) throws and is reported as failed.
+        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.SHORTLISTED);
+
+        application.setStatus(ApplicationStatus.SHORTLISTED);
+        application.setShortlistStatus("Shortlisted");
+        applicationForCandidateRepository.save(application);
+
+        // Notify the candidate (email + WhatsApp), same as ATS shortlisting.
+        // Best-effort: a notification failure must not fail an already-committed shortlist.
+        try {
+            Map<String, Object> emailParams = new HashMap<>();
+            emailParams.put("recipientEmail", email);
+            emailParams.put("fullName", application.getFirstName() + " " + application.getLastName());
+            emailParams.put("mobileNumber", application.getMobileNumber());
+            emailService.sendUniversalEmail(EmailType.SHORTLIST_NOTIFICATION, emailParams);
+        } catch (Exception e) {
+            logger.warn("Shortlist notification failed for {} (job {}): {}", email, jobPrefix, e.getMessage());
+        }
     }
 
      

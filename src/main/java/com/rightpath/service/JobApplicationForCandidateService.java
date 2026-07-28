@@ -131,6 +131,28 @@ public interface JobApplicationForCandidateService {
     void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDTO dto);
 
     /**
+     * Updates the referral verification status of a candidate's application.
+     *
+     * @param jobPrefix Job identifier.
+     * @param email Candidate's email.
+     * @param referralStatus New status; must be a valid {@link com.rightpath.enums.ReferralStatus}
+     *                       value (PENDING/VERIFIED/REJECTED), case-insensitive.
+     * @return The updated application as a DTO.
+     */
+    JobApplicationForCandidateDTO updateReferralStatus(String jobPrefix, String email, String referralStatus);
+
+    /**
+     * Manually shortlists a single candidate without running ATS screening.
+     * Only an APPLIED application can transition to SHORTLISTED; any other current
+     * status throws (so the caller can report it as failed). On success the
+     * candidate is notified (shortlist email + WhatsApp), best-effort.
+     *
+     * @param jobPrefix Job identifier.
+     * @param email Candidate's email.
+     */
+    void shortlistCandidateWithoutAts(String jobPrefix, String email);
+
+    /**
      * Updates the written test status for aptitude and programming tests.
      *
      * @param jobPrefix Job identifier.

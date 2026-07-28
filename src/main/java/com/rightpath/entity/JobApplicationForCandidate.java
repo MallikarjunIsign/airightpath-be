@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 import com.rightpath.enums.ApplicationStatus;
+import com.rightpath.enums.ReferralStatus;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -48,6 +49,12 @@ public class JobApplicationForCandidate {
 	    // may apply with neither, or supply who referred them (id and/or name).
 	    private String referralId;
 	    private String referralName;
+
+	    // Verification state of the referral. Defaults to PENDING at apply time when
+	    // referral details are supplied; null when there is no referral. Updated later
+	    // by a recruiter (VERIFIED / REJECTED).
+	    @Enumerated(EnumType.STRING)
+	    private ReferralStatus referralStatus;
 	    
 
 	    @Lob

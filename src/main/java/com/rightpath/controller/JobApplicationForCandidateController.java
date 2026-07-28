@@ -204,6 +204,9 @@ public class JobApplicationForCandidateController {
         dto.setEmail(entity.getUser().getEmail());
         dto.setStatus(entity.getStatus().toString());
         dto.setMobileNumber(entity.getMobileNumber());
+        dto.setReferralId(entity.getReferralId());
+        dto.setReferralName(entity.getReferralName());
+        dto.setReferralStatus(entity.getReferralStatus() != null ? entity.getReferralStatus().name() : null);
         dto.setConfirmationStatus(entity.getConfirmationStatus());
         dto.setAcknowledgedStatus(entity.getAcknowledgedStatus());
         dto.setReconfirmationStatus(entity.getReconfirmationStatus());
@@ -212,6 +215,72 @@ public class JobApplicationForCandidateController {
         dto.setRejectionStatus(entity.getRejectionStatus());
 
         return dto;
+    }
+
+    /**
+     * Recruiter: Update the referral verification status of an application.
+     * referralStatus must be one of PENDING / VERIFIED / REJECTED (case-insensitive).
+     */
+    @PatchMapping("/referral-status")
+    @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
+    public ResponseEntity<JobApplicationForCandidateDTO> updateReferralStatus(
+        @RequestParam String jobPrefix,
+        @RequestParam String email,
+        @RequestParam String referralStatus) {
+
+        JobApplicationForCandidateDTO updated =
+            applicationForCandidateService.updateReferralStatus(jobPrefix, email, referralStatus);
+        sendWebSocketNotification(email, jobPrefix, "REFERRAL_STATUS_UPDATED",
+            "Referral status updated to " + updated.getReferralStatus());
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * Recruiter: Manually shortlist candidates without ATS screening.
+     * Body: { "jobPrefix": "...", "emails": ["a@x.com", ...] }.
+     * Only APPLIED candidates are shortlisted; others are returned in failed[].
+     */
+    @PatchMapping("/shortlist")
+    @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
+    public ResponseEntity<?> shortlistWithoutAts(@RequestBody BulkMailRequestDTO request) {
+        String jobPrefix = request.getJobPrefix();
+
+        if (jobPrefix == null || jobPrefix.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Job prefix is required"));
+        }
+        if (request.getEmails() == null || request.getEmails().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "At least one email is required"));
+        }
+
+        List<String> sent = new ArrayList<>();
+        List<Map<String, String>> failed = new ArrayList<>();
+
+        for (String email : request.getEmails()) {
+            try {
+                applicationForCandidateService.shortlistCandidateWithoutAts(jobPrefix, email);
+                sendWebSocketNotification(email, jobPrefix, "SHORTLISTED", "Candidate shortlisted");
+                sent.add(email);
+            } catch (Exception e) {
+                failed.add(Map.of("email", email, "reason", e.getMessage() == null ? "Unknown error" : e.getMessage()));
+            }
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("sent", sent);
+        body.put("failed", failed);
+        body.put("sentCount", sent.size());
+        body.put("failedCount", failed.size());
+
+        if (failed.isEmpty()) {
+            body.put("message", "Candidates shortlisted successfully.");
+            return ResponseEntity.ok(body);
+        }
+        if (!sent.isEmpty()) {
+            body.put("message", "Some candidates were shortlisted; others failed.");
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(body);
+        }
+        body.put("message", "No candidates were shortlisted.");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     /**

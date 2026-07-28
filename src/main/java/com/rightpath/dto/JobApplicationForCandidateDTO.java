@@ -45,9 +45,11 @@ public class JobApplicationForCandidateDTO {
 	    private String userEmail;
 	    private String mobileNumber;
 
-	    // Optional referral details — who referred this candidate. Both nullable.
+	    // Optional referral details — who referred this candidate. All nullable.
 	    private String referralId;
 	    private String referralName;
+	    // Referral verification state (PENDING/VERIFIED/REJECTED); null when no referral.
+	    private String referralStatus;
 
 	    private String jobPrefix;
 	    
@@ -87,6 +89,7 @@ public class JobApplicationForCandidateDTO {
 	        this.userEmail = entity.getUser().getEmail();
 	        this.referralId = entity.getReferralId();
 	        this.referralName = entity.getReferralName();
+	        this.referralStatus = entity.getReferralStatus() != null ? entity.getReferralStatus().name() : null;
 	        this.jobPrefix = entity.getJobPost().getJobPrefix();
 	        this.status = entity.getStatus() != null ? entity.getStatus().name() : null;
 	        this.confirmationStatus = entity.getConfirmationStatus();
