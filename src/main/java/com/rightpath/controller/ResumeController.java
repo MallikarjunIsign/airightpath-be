@@ -1,7 +1,6 @@
 package com.rightpath.controller;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.rightpath.dto.ResumeDownload;
-import com.rightpath.entity.Resume;
 import com.rightpath.service.ResumeService;
 
 @RestController
@@ -94,19 +92,4 @@ public class ResumeController {
                 .body(resume.data());
     }
 
-    // ===================================================================== //
-    // Endpoint: View all resumes                                           //
-    // ===================================================================== //
-    /**
-     * Retrieves all resumes with associated user information.
-     *
-     * @return List of resumes.
-     */
-    @GetMapping("/view-all-resumes")
-    @PreAuthorize("hasAuthority('RESUME_VIEW_ALL')")
-    public List<Resume> getAllResumesWithUsers() {
-        return resumeService.getAllResumesWithUsers();
-    }
-
-   
 }
