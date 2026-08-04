@@ -42,7 +42,7 @@ spring:
     host: ${MAIL_HOST:smtp.hostinger.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:rightpath-notifications@isigntech.com}
-    password: ${MAIL_PASSWORD:21July2026}
+    password: ${MAIL_PASSWORD:21July@2026}
     properties:
       mail:
         smtp:
