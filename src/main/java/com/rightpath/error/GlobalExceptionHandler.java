@@ -30,6 +30,9 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 
 import com.rightpath.exceptions.AiServiceException;
 import com.rightpath.exceptions.ApplicationDeadlinePassedException;
+import com.rightpath.exceptions.JobDeadlineInPastException;
+import com.rightpath.exceptions.JobPostNotFoundException;
+import com.rightpath.exceptions.JobPrefixImmutableException;
 import com.rightpath.exceptions.CompilerException;
 import com.rightpath.exceptions.CustomException;
 import com.rightpath.exceptions.InactiveUserException;
@@ -290,6 +293,27 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApplicationDeadlinePassedException.class)
     public ResponseEntity<ApiError> handleDeadlinePassed(ApplicationDeadlinePassedException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, ErrorCodes.APPLICATION_DEADLINE_PASSED, ex.getMessage(), req, null);
+    }
+
+    /** Editing a job post that does not exist. */
+    @ExceptionHandler(JobPostNotFoundException.class)
+    public ResponseEntity<ApiError> handleJobPostNotFound(JobPostNotFoundException ex, HttpServletRequest req) {
+        logger.warn("Job post not found: {}", ex.getMessage());
+        return build(HttpStatus.NOT_FOUND, ErrorCodes.JOB_NOT_FOUND, ex.getMessage(), req, null);
+    }
+
+    /** Attempt to rename a job post's prefix, which every related record keys off. */
+    @ExceptionHandler(JobPrefixImmutableException.class)
+    public ResponseEntity<ApiError> handleJobPrefixImmutable(JobPrefixImmutableException ex, HttpServletRequest req) {
+        logger.warn("Rejected job prefix change at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.JOB_PREFIX_IMMUTABLE, ex.getMessage(), req, null);
+    }
+
+    /** Job update that moves the application deadline into the past. */
+    @ExceptionHandler(JobDeadlineInPastException.class)
+    public ResponseEntity<ApiError> handleJobDeadlineInPast(JobDeadlineInPastException ex, HttpServletRequest req) {
+        logger.warn("Rejected past job deadline at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.JOB_DEADLINE_IN_PAST, ex.getMessage(), req, null);
     }
 
     /** Duplicate registration / conflicting state (e.g. "Email already exists"). */

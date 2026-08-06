@@ -35,6 +35,7 @@ public enum PermissionName {
 
     // Job posts & applications
     JOB_POST_CREATE,
+    JOB_POST_UPDATE,
     JOB_POST_READ,
     JOB_APPLY,
     JOB_APPLICATION_READ_ALL,

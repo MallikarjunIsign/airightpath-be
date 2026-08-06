@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 
 import com.rightpath.dto.JobListingResponse;
 import com.rightpath.dto.JobPostDTO;
@@ -31,12 +32,14 @@ import com.rightpath.util.BusinessSchedule;
  * job-type comparison, deadline bucketing) is verified as executed rather than as
  * intended.
  *
- * <p>Runs against the active profile's datasource and rolls every insert back.
+ * <p>Runs against the dev profile's datasource (pinned here, not inherited from the
+ * base config) and rolls every insert back.
  * Assertions are scoped to the seeded fixtures — via a distinctive company name
  * that the {@code search} filter can select on — so pre-existing rows in a shared
  * dev database cannot make the expectations drift.</p>
  */
 @DataJpaTest
+@ActiveProfiles("dev")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({ JobPostServiceImpl.class, BusinessSchedule.class })
 class JobPostListingIntegrationTest {

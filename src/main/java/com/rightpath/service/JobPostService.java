@@ -24,6 +24,24 @@ public interface JobPostService {
     public JobPost createJobPost(JobPostDTO dto);
 
     /**
+     * Replaces the editable fields of an existing job post.
+     *
+     * <p>{@code jobPrefix} and {@code createdAt} are preserved; {@code updatedAt}
+     * and {@code updatedBy} are stamped. Every other field in the DTO overwrites
+     * what is stored, so callers must send the full object rather than a patch.</p>
+     *
+     * @param id  The id of the posting to edit.
+     * @param dto The full replacement payload.
+     * @return The saved JobPost entity.
+     * @throws com.rightpath.exceptions.JobPostNotFoundException if no posting has that id.
+     * @throws com.rightpath.exceptions.JobPrefixImmutableException if the payload's
+     *         prefix differs from the stored one.
+     * @throws com.rightpath.exceptions.JobDeadlineInPastException if the payload moves
+     *         the deadline to a date that has already passed.
+     */
+    public JobPost updateJobPost(Long id, JobPostDTO dto);
+
+    /**
      * Converts a JobPost entity to its DTO representation.
      *
      * @param post The JobPost entity.

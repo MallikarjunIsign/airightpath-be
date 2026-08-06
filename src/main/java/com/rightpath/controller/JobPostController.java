@@ -17,6 +17,7 @@ import com.rightpath.entity.JobPost;
 import com.rightpath.rbac.PermissionName;
 import com.rightpath.service.JobPostService;
 
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -58,7 +59,7 @@ public class JobPostController {
      */
     @PostMapping("/post")
     @PreAuthorize("hasAuthority('JOB_POST_CREATE')")
-    public ResponseEntity<JobPost> createJobPost(@RequestBody JobPostDTO dto) {
+    public ResponseEntity<JobPost> createJobPost(@Valid @RequestBody JobPostDTO dto) {
         log.info("Received request to create new job posting");
         JobPost created = jobPostService.createJobPost(dto);
         log.debug("Successfully created job posting with ID: {}", created.getId());
@@ -68,6 +69,43 @@ public class JobPostController {
         log.info("Broadcasted new job posting to WebSocket subscribers");
 
         return ResponseEntity.ok(created);
+    }
+
+    /**
+     * Updates an existing job posting (Admin only).
+     *
+     * <p>The body is the same {@link JobPostDTO} {@code POST /post} accepts, validated
+     * by the same rules, and is applied as a <strong>full replace</strong> of the
+     * editable fields — send the whole object, not a patch. Two fields are not the
+     * caller's to change:</p>
+     * <ul>
+     *   <li>{@code jobPrefix} — immutable; a differing value is rejected with
+     *       {@code 400 JOB_PREFIX_IMMUTABLE} rather than renaming the posting, because
+     *       applications, assessments, results and the public apply link key off it.
+     *       Omitting it means "unchanged".</li>
+     *   <li>{@code createdAt} — preserved. {@code updatedAt} / {@code updatedBy} are
+     *       stamped from the request.</li>
+     * </ul>
+     *
+     * <p>An expired posting may keep its own past {@code applicationDeadline} (fixing a
+     * typo must not force a reopen), but moving the deadline to a different past date
+     * returns {@code 400 JOB_DEADLINE_IN_PAST}.</p>
+     *
+     * @param id  id of the posting to edit, as returned in {@code JobPostDTO.id}
+     * @param dto full replacement payload
+     * @return the saved posting, in the same shape {@code POST /post} returns
+     */
+    @PutMapping("/post/{id}")
+    @PreAuthorize("hasAuthority('JOB_POST_UPDATE')")
+    public ResponseEntity<JobPost> updateJobPost(@PathVariable Long id, @Valid @RequestBody JobPostDTO dto) {
+        log.info("Received request to update job posting {}", id);
+        JobPost updated = jobPostService.updateJobPost(id, dto);
+
+        // Same broadcast as create, so subscribed clients refresh their listing.
+        messagingTemplate.convertAndSend("/topic/jobPosts", updated);
+        log.info("Broadcasted updated job posting {} to WebSocket subscribers", id);
+
+        return ResponseEntity.ok(updated);
     }
 
     /**

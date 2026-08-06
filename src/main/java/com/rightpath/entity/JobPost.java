@@ -1,6 +1,7 @@
 package com.rightpath.entity;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -64,6 +65,16 @@ public class JobPost {
 	private LocalDate applicationDeadline;
 
 	private LocalDate createdAt;
+
+	/**
+	 * When this posting was last edited, in the business timezone; null until the
+	 * first edit. A timestamp rather than a date (unlike {@code createdAt}, whose
+	 * DATE column predates this) because edits to a live posting are audit-relevant.
+	 */
+	private LocalDateTime updatedAt;
+
+	/** Email of the admin who last edited this posting; null until the first edit. */
+	private String updatedBy;
 
 	@OneToMany(mappedBy = "jobPost", cascade = CascadeType.ALL, orphanRemoval = true)
 	@JsonIgnore

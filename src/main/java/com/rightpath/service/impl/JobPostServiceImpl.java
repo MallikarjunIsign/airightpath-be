@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.rightpath.dto.JobListingResponse;
@@ -24,6 +27,9 @@ import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.entity.JobPost;
 import com.rightpath.entity.Users;
 import com.rightpath.enums.JobStatusFilter;
+import com.rightpath.exceptions.JobDeadlineInPastException;
+import com.rightpath.exceptions.JobPostNotFoundException;
+import com.rightpath.exceptions.JobPrefixImmutableException;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.repository.JobPostRepository;
 import com.rightpath.repository.JobPostSpecifications;
@@ -32,6 +38,7 @@ import com.rightpath.repository.UsersRepository;
 import com.rightpath.service.JobPostService;
 import com.rightpath.util.BusinessSchedule;
 
+import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -99,6 +106,98 @@ public class JobPostServiceImpl implements JobPostService {
 				.createdAt(businessSchedule.today()).build();
 
 		return repository.save(jobPost);
+	}
+
+	@Override
+	@Transactional
+	public JobPost updateJobPost(Long id, JobPostDTO dto) {
+		JobPost existing = repository.findById(id).orElseThrow(() -> new JobPostNotFoundException(id));
+
+		requireUnchangedPrefix(existing, dto);
+		requireDeadlineNotMovedIntoPast(existing, dto);
+
+		// Full replace of the editable fields. jobPrefix and createdAt are deliberately
+		// absent: the prefix is immutable, and the creation date is not the admin's to
+		// rewrite.
+		List<String> changes = new ArrayList<>();
+		existing.setJobTitle(tracked(changes, "jobTitle", existing.getJobTitle(), dto.getJobTitle()));
+		existing.setCompanyName(tracked(changes, "companyName", existing.getCompanyName(), dto.getCompanyName()));
+		existing.setLocation(tracked(changes, "location", existing.getLocation(), dto.getLocation()));
+		existing.setJobDescription(
+				tracked(changes, "jobDescription", existing.getJobDescription(), dto.getJobDescription()));
+		existing.setKeySkills(tracked(changes, "keySkills", existing.getKeySkills(), dto.getKeySkills()));
+		existing.setExperience(tracked(changes, "experience", existing.getExperience(), dto.getExperience()));
+		existing.setEducation(tracked(changes, "education", existing.getEducation(), dto.getEducation()));
+		existing.setSalaryRange(tracked(changes, "salaryRange", existing.getSalaryRange(), dto.getSalaryRange()));
+		existing.setJobType(tracked(changes, "jobType", existing.getJobType(), dto.getJobType()));
+		existing.setIndustry(tracked(changes, "industry", existing.getIndustry(), dto.getIndustry()));
+		existing.setDepartment(tracked(changes, "department", existing.getDepartment(), dto.getDepartment()));
+		existing.setRole(tracked(changes, "role", existing.getRole(), dto.getRole()));
+		existing.setNumberOfOpenings(
+				tracked(changes, "numberOfOpenings", existing.getNumberOfOpenings(), dto.getNumberOfOpenings()));
+		existing.setContactEmail(tracked(changes, "contactEmail", existing.getContactEmail(), dto.getContactEmail()));
+		existing.setApplicationDeadline(tracked(changes, "applicationDeadline",
+				existing.getApplicationDeadline(), dto.getApplicationDeadline()));
+
+		existing.setUpdatedAt(businessSchedule.now());
+		existing.setUpdatedBy(actingUser());
+
+		JobPost saved = repository.save(existing);
+		// Lightweight audit trail: who edited which fields of a posting candidates may
+		// already have applied to.
+		log.info("Job post {} ({}) updated by {}; changes: {}", saved.getId(), saved.getJobPrefix(),
+				saved.getUpdatedBy(), changes.isEmpty() ? "none" : String.join("; ", changes));
+		return saved;
+	}
+
+	/**
+	 * Rejects a prefix change. A missing or blank prefix in the payload is treated as
+	 * "unchanged" rather than an attempt to clear it, so a client that does not echo
+	 * the field still gets a successful edit; a <em>different</em> prefix is refused.
+	 */
+	private static void requireUnchangedPrefix(JobPost existing, JobPostDTO dto) {
+		String requested = dto.getJobPrefix() == null ? null : dto.getJobPrefix().trim();
+		if (requested == null || requested.isEmpty()) {
+			return;
+		}
+		if (!requested.equalsIgnoreCase(existing.getJobPrefix())) {
+			throw new JobPrefixImmutableException(existing.getJobPrefix(), dto.getJobPrefix());
+		}
+	}
+
+	/**
+	 * Allows an expired posting to keep its own past deadline — an admin correcting a
+	 * typo on a closed job must not be forced to reopen it — while requiring any
+	 * <em>new</em> deadline to be today or later. Clearing the deadline is permitted:
+	 * a posting with no deadline never expires.
+	 */
+	private void requireDeadlineNotMovedIntoPast(JobPost existing, JobPostDTO dto) {
+		LocalDate requested = dto.getApplicationDeadline();
+		if (requested == null || requested.equals(existing.getApplicationDeadline())) {
+			return;
+		}
+		LocalDate today = businessSchedule.today();
+		if (requested.isBefore(today)) {
+			throw new JobDeadlineInPastException(requested, today);
+		}
+	}
+
+	/** Records a field change for the audit log and returns the value to store. */
+	private static <T> T tracked(List<String> changes, String field, T current, T incoming) {
+		if (!Objects.equals(current, incoming)) {
+			changes.add(field + ": '" + current + "' -> '" + incoming + "'");
+		}
+		return incoming;
+	}
+
+	/**
+	 * Email of the authenticated admin, as set by the JWT filter. Falls back to
+	 * "system" for non-request callers (seeders, scheduled jobs) so the audit line is
+	 * never blank.
+	 */
+	private static String actingUser() {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		return (authentication == null || authentication.getName() == null) ? "system" : authentication.getName();
 	}
 
 	// Newest first: id is IDENTITY-generated, so higher id = more recently created.
@@ -245,7 +344,8 @@ public class JobPostServiceImpl implements JobPostService {
 
 	@Override
 	public JobPostDTO convertToDTO(JobPost post) {
-		return JobPostDTO.builder().jobPrefix(post.getJobPrefix()).jobTitle(post.getJobTitle())
+		// id is exposed so clients can address a posting for editing.
+		return JobPostDTO.builder().id(post.getId()).jobPrefix(post.getJobPrefix()).jobTitle(post.getJobTitle())
 				.companyName(post.getCompanyName()).location(post.getLocation())
 				.jobDescription(post.getJobDescription()).keySkills(post.getKeySkills())
 				.experience(post.getExperience()).education(post.getEducation()).salaryRange(post.getSalaryRange())

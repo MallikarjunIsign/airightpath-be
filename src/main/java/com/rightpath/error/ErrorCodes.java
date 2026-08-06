@@ -35,6 +35,15 @@ public final class ErrorCodes {
     public static final String APPLICATION_DEADLINE_PASSED = "APPLICATION_DEADLINE_PASSED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
     public static final String BUSINESS_ERROR = "BUSINESS_ERROR";
+
+    // Job posts
+    /** No job post exists for the requested id. */
+    public static final String JOB_NOT_FOUND = "JOB_NOT_FOUND";
+    /** An update tried to change {@code jobPrefix}, which everything else keys off. */
+    public static final String JOB_PREFIX_IMMUTABLE = "JOB_PREFIX_IMMUTABLE";
+    /** An update set a *new* application deadline that has already passed. */
+    public static final String JOB_DEADLINE_IN_PAST = "JOB_DEADLINE_IN_PAST";
+
     public static final String COMPILER_ERROR = "COMPILER_ERROR";
 
     // AI Service
