@@ -13,4 +13,13 @@ public class JobPostNotFoundException extends RuntimeException {
     public JobPostNotFoundException(Long id) {
         super("No job post found with id " + id + ".");
     }
+
+    /**
+     * For candidate-facing lookups by prefix, where a posting that was archived is
+     * indistinguishable from one that never existed — and the wording is read by the
+     * candidate, so it says "no longer available" rather than exposing an internal id.
+     */
+    public JobPostNotFoundException(String jobPrefix) {
+        super("This job (" + jobPrefix + ") is no longer available.");
+    }
 }

@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.rightpath.dto.JobListingResponse;
 import com.rightpath.dto.JobPostDTO;
+import com.rightpath.dto.JobPostDeletionDTO;
 import com.rightpath.dto.JobPostSearchRequest;
 import com.rightpath.dto.JobStatusCountsDTO;
 import com.rightpath.entity.JobPost;
@@ -40,6 +41,25 @@ public interface JobPostService {
      *         the deadline to a date that has already passed.
      */
     public JobPost updateJobPost(Long id, JobPostDTO dto);
+
+    /**
+     * Archives a job post: it disappears from every listing and from the candidate
+     * apply path, while the row itself stays.
+     *
+     * <p>Deletion is deliberately soft. Applications, assessments, results and compiler
+     * submissions are filed under {@code jobPrefix}, so removing the row would either
+     * orphan them or destroy candidate history; keeping it means dependent records
+     * always point at a real job, remain auditable, and the prefix stays reserved (it is
+     * unique, and the archived row still holds it).</p>
+     *
+     * <p>Idempotency: a posting that is already archived reads as absent, so a second
+     * call reports it as not found.</p>
+     *
+     * @param id The id of the posting to archive.
+     * @return What was archived, including how many applications were retained.
+     * @throws com.rightpath.exceptions.JobPostNotFoundException if no live posting has that id.
+     */
+    public JobPostDeletionDTO deleteJobPost(Long id);
 
     /**
      * Converts a JobPost entity to its DTO representation.

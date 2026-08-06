@@ -33,6 +33,9 @@ public final class JobPostSpecifications {
     /** Entity property holding the free-text job type. */
     public static final String FIELD_JOB_TYPE = "jobType";
 
+    /** Entity property that is null while a posting is live and set once archived. */
+    public static final String FIELD_DELETED_AT = "deletedAt";
+
     /**
      * Columns scanned by the free-text {@code search} term. Kept in one place so
      * the listing query and any future export stay in sync.
@@ -126,6 +129,20 @@ public final class JobPostSpecifications {
                     cb.greaterThanOrEqualTo(root.get(FIELD_APPLICATION_DEADLINE), today));
         }
         return (root, query, cb) -> cb.lessThan(root.get(FIELD_APPLICATION_DEADLINE), today);
+    }
+
+    /**
+     * Excludes archived (soft-deleted) postings.
+     *
+     * <p>Applied to every listing and count, so a deleted job disappears from the admin
+     * board, the candidate job list and the status/job-type dropdowns at once. This is
+     * orthogonal to {@link JobStatusFilter}: even {@code status=ALL} means "all live
+     * postings", never archived ones.</p>
+     *
+     * @return a specification matching only live postings
+     */
+    public static Specification<JobPost> notDeleted() {
+        return (root, query, cb) -> cb.isNull(root.get(FIELD_DELETED_AT));
     }
 
     /**

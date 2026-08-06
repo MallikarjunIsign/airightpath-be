@@ -86,6 +86,7 @@ public interface JobPostRepository extends JpaRepository<JobPost, Long>, JpaSpec
      */
     @Query("SELECT jp.jobType AS jobType, COUNT(jp) AS occurrences FROM JobPost jp "
             + "WHERE jp.jobType IS NOT NULL AND TRIM(jp.jobType) <> '' "
+            + "AND jp.deletedAt IS NULL "
             + "GROUP BY jp.jobType")
     List<JobTypeCount> findJobTypeCounts();
 

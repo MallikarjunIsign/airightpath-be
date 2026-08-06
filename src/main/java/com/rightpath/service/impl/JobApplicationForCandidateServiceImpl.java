@@ -26,6 +26,7 @@ import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.EmailType;
 import com.rightpath.enums.ReferralStatus;
 import com.rightpath.exceptions.ApplicationDeadlinePassedException;
+import com.rightpath.exceptions.JobPostNotFoundException;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.AssessmentRepository;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
@@ -109,8 +110,11 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
         Users user = usersRepository.findById(dto.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + dto.getEmail()));
 
+        // An archived posting reads as gone to candidates: the public apply link must
+        // answer with a clean 404, not let someone apply to a deleted job.
         JobPost jobPost = jobPostRepository.findByJobPrefix(dto.getJobPrefix())
-                .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + dto.getJobPrefix()));
+                .filter(post -> post.getDeletedAt() == null)
+                .orElseThrow(() -> new JobPostNotFoundException(dto.getJobPrefix()));
 
         // Business date, so this agrees with the ACTIVE/EXPIRED buckets the job
         // listing shows; on a UTC server LocalDate.now() would close applications

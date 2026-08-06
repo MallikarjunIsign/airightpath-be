@@ -76,6 +76,21 @@ public class JobPost {
 	/** Email of the admin who last edited this posting; null until the first edit. */
 	private String updatedBy;
 
+	/**
+	 * When this posting was archived ("deleted"), in the business timezone; null while
+	 * it is live — so {@code deletedAt IS NULL} is the liveness test.
+	 *
+	 * <p>Deletion is soft: the row stays so that applications, assessments, results and
+	 * compiler submissions filed under {@link #jobPrefix} keep pointing at a real job
+	 * and remain auditable, and so the prefix can never be reused (it is unique, and
+	 * the archived row still holds it). Archived postings are excluded from every
+	 * listing and from the candidate apply path.</p>
+	 */
+	private LocalDateTime deletedAt;
+
+	/** Email of the admin who archived this posting; null while it is live. */
+	private String deletedBy;
+
 	@OneToMany(mappedBy = "jobPost", cascade = CascadeType.ALL, orphanRemoval = true)
 	@JsonIgnore
 	private Set<JobApplicationForCandidate> jobApplications = new HashSet<>();

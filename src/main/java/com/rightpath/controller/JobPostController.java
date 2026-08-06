@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import java.util.List;
 
 import com.rightpath.dto.JobPostDTO;
+import com.rightpath.dto.JobPostDeletionDTO;
 import com.rightpath.dto.JobPostSearchRequest;
 import com.rightpath.dto.JobStatusCountsDTO;
 import com.rightpath.entity.JobPost;
@@ -199,6 +200,40 @@ public class JobPostController {
     public ResponseEntity<List<String>> getJobTypes() {
         log.info("Received request for distinct job types");
         return ResponseEntity.ok(jobPostService.getDistinctJobTypes());
+    }
+
+    /**
+     * Deletes a job posting (Admin only).
+     *
+     * <p><strong>Deletion is soft.</strong> The posting is archived: it vanishes from
+     * {@code getPost}, from the paginated listing (including {@code status=ALL}), from
+     * the job-type dropdown and from the candidate apply path — but the row survives, so
+     * applications, assessments, results and compiler submissions filed under its prefix
+     * keep pointing at a real job and stay auditable. Nothing is cascaded and no
+     * candidate history is destroyed, which is why a posting with applications deletes
+     * just like an empty one instead of returning a conflict.</p>
+     *
+     * <p>The prefix stays reserved: it is unique and the archived row still holds it, so
+     * it can never be handed to a future posting and make old applications ambiguous.</p>
+     *
+     * <p>Already-archived postings read as absent, so a repeated call returns
+     * {@code 404 JOB_NOT_FOUND} rather than archiving twice.</p>
+     *
+     * @param id id of the posting to archive, as returned in {@code JobPostDTO.id}
+     * @return what was archived, including the number of applications retained
+     */
+    @DeleteMapping("/post/{id}")
+    @PreAuthorize("hasAuthority('JOB_POST_DELETE')")
+    public ResponseEntity<JobPostDeletionDTO> deleteJobPost(@PathVariable Long id) {
+        log.info("Received request to delete job posting {}", id);
+        JobPostDeletionDTO deleted = jobPostService.deleteJobPost(id);
+
+        // Same broadcast as create/update, so subscribed clients drop it from their list.
+        messagingTemplate.convertAndSend("/topic/jobPosts", deleted);
+        log.info("Broadcasted deletion of job posting {} ({}) to WebSocket subscribers",
+                id, deleted.getJobPrefix());
+
+        return ResponseEntity.ok(deleted);
     }
 
     /**

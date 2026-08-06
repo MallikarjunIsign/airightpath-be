@@ -2,9 +2,9 @@ package com.rightpath.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,14 +30,21 @@ class JobPostAuthorizationTest {
 	}
 
 	@Test
+	void deleteRequiresTheJobPostDeletePermission() {
+		assertEquals("hasAuthority('" + PermissionName.JOB_POST_DELETE + "')",
+				preAuthorizeOf("deleteJobPost", Long.class));
+	}
+
+	@Test
 	void createStillRequiresTheJobPostCreatePermission() {
 		assertEquals("hasAuthority('" + PermissionName.JOB_POST_CREATE + "')",
 				preAuthorizeOf("createJobPost", com.rightpath.dto.JobPostDTO.class));
 	}
 
 	@Test
-	void editPermissionIsSeparateFromCreateSoItCanBeGrantedIndependently() {
-		assertTrue(PermissionName.valueOf("JOB_POST_UPDATE") != PermissionName.JOB_POST_CREATE);
+	void writePermissionsAreSeparateSoTheyCanBeGrantedIndependently() {
+		assertEquals(3, Set.of(PermissionName.JOB_POST_CREATE, PermissionName.JOB_POST_UPDATE,
+				PermissionName.JOB_POST_DELETE).size());
 	}
 
 	private static String preAuthorizeOf(String methodName, Class<?>... parameterTypes) {

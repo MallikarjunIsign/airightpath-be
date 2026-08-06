@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import com.rightpath.dto.JobListingResponse;
 import com.rightpath.dto.JobPostDTO;
+import com.rightpath.dto.JobPostDeletionDTO;
 import com.rightpath.dto.JobPostSearchRequest;
 import com.rightpath.dto.JobStatusCountsDTO;
 import com.rightpath.entity.JobApplicationForCandidate;
@@ -150,6 +151,27 @@ public class JobPostServiceImpl implements JobPostService {
 		return saved;
 	}
 
+	@Override
+	@Transactional
+	public JobPostDeletionDTO deleteJobPost(Long id) {
+		JobPost live = repository.findById(id)
+				.filter(post -> post.getDeletedAt() == null)
+				.orElseThrow(() -> new JobPostNotFoundException(id));
+
+		long applications = jobApplicationRepository.findByJobPost(live).size();
+
+		live.setDeletedAt(businessSchedule.now());
+		live.setDeletedBy(actingUser());
+		JobPost archived = repository.save(live);
+
+		// Deliberately loud: this hides a posting candidates may have applied to, and the
+		// retained count is what makes the soft delete auditable after the fact.
+		log.info("Job post {} ({}) archived by {}; {} application(s) retained", archived.getId(),
+				archived.getJobPrefix(), archived.getDeletedBy(), applications);
+
+		return new JobPostDeletionDTO(archived.getId(), archived.getJobPrefix(), archived.getDeletedAt(), applications);
+	}
+
 	/**
 	 * Rejects a prefix change. A missing or blank prefix in the payload is treated as
 	 * "unchanged" rather than an attempt to clear it, so a client that does not echo
@@ -205,7 +227,8 @@ public class JobPostServiceImpl implements JobPostService {
 
 	@Override
 	public List<JobPostDTO> getAllJobPosts() {
-		return repository.findAll(NEWEST_FIRST).stream().map(this::convertToDTO).collect(Collectors.toList());
+		return repository.findAll(JobPostSpecifications.notDeleted(), NEWEST_FIRST).stream()
+				.map(this::convertToDTO).collect(Collectors.toList());
 	}
 
 	@Override
@@ -214,8 +237,10 @@ public class JobPostServiceImpl implements JobPostService {
 		Pageable pageable = toPageable(request);
 
 		// Search and job type also bound the counts; status deliberately does not,
-		// since the dropdown shows how many rows each bucket *would* return.
+		// since the dropdown shows how many rows each bucket *would* return. Archived
+		// postings are excluded from both, so no bucket can advertise a deleted job.
 		Specification<JobPost> filters = JobPostSpecifications.combine(
+				JobPostSpecifications.notDeleted(),
 				JobPostSpecifications.matchesSearch(request.getSearch()),
 				JobPostSpecifications.matchesJobType(request.getJobType()));
 		Specification<JobPost> statusFilter = JobPostSpecifications.hasStatus(status, businessSchedule.today());
@@ -234,6 +259,7 @@ public class JobPostServiceImpl implements JobPostService {
 	@Override
 	public JobStatusCountsDTO getStatusCounts(String search, String jobType) {
 		return countBuckets(JobPostSpecifications.combine(
+				JobPostSpecifications.notDeleted(),
 				JobPostSpecifications.matchesSearch(search),
 				JobPostSpecifications.matchesJobType(jobType)));
 	}
@@ -355,7 +381,10 @@ public class JobPostServiceImpl implements JobPostService {
 	}
 
 	public String applyToJob(Long jobId, String userEmail) {
-		JobPost jobPost = repository.findById(jobId).orElseThrow(() -> new RuntimeException("Job not found"));
+		// Archived postings are closed to applications, same as on the prefix-based path.
+		JobPost jobPost = repository.findById(jobId)
+				.filter(post -> post.getDeletedAt() == null)
+				.orElseThrow(() -> new JobPostNotFoundException(jobId));
 
 		Users user = usersRepository.findById(userEmail).orElseThrow(() -> new RuntimeException("User not found"));
 
