@@ -8,7 +8,11 @@ import org.springframework.web.bind.annotation.*;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.util.List;
+
 import com.rightpath.dto.JobPostDTO;
+import com.rightpath.dto.JobPostSearchRequest;
+import com.rightpath.dto.JobStatusCountsDTO;
 import com.rightpath.entity.JobPost;
 import com.rightpath.rbac.PermissionName;
 import com.rightpath.service.JobPostService;
@@ -67,34 +71,96 @@ public class JobPostController {
     }
 
     /**
-     * Retrieves job postings, newest first (descending).
+     * Retrieves job postings, either as a plain list or as a filtered page.
      *
-     * <p>Pagination is optional: pass {@code page} and/or {@code size} to get a
-     * paginated response (with total counts, etc.); omit both to get the full
-     * list. Results are always sorted newest first.</p>
+     * <p><strong>No query parameters at all</strong> returns every posting as a
+     * JSON array, newest first — the original behaviour, kept for clients that
+     * have not migrated yet.</p>
      *
-     * @param page zero-based page index (optional; defaults to 0 when only size given)
-     * @param size page size (optional; defaults to 10 when only page given)
-     * @return all postings (list) when no paging params, else a page of postings
+     * <p><strong>Any query parameter</strong> switches to the paginated form,
+     * which returns {@code content} / {@code totalElements} / {@code totalPages} /
+     * {@code page} / {@code size} plus a {@code counts} object sized for the
+     * current {@code search} and {@code jobType} (see
+     * {@link #getStatusCounts(String, String)}). Note that this form defaults to
+     * <em>active</em> postings only.</p>
+     *
+     * @param page    zero-based page index (default 0)
+     * @param size    page size (default 20, capped at 100)
+     * @param sort    {@code field,direction}, e.g. {@code createdAt,desc}
+     *                (default {@code applicationDeadline,asc}); {@code id} is
+     *                always appended as a tiebreaker
+     * @param status  {@code ACTIVE} | {@code EXPIRED} | {@code ALL} (default
+     *                {@code ACTIVE}); postings with no deadline count as active
+     * @param search  case-insensitive substring matched against job title, company,
+     *                key skills, location and job prefix
+     * @param jobType job type, compared ignoring case and separators so
+     *                {@code full-time} matches {@code Full-Time} and {@code full time}
+     * @return all postings (list) when no parameters are given, else a page of postings
      */
     @GetMapping("/getPost")
     @PreAuthorize("hasAuthority('JOB_POST_READ')")
-    public ResponseEntity<?> getAllJobs(
+    public ResponseEntity<Object> getAllJobs(
             @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size) {
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String jobType) {
 
-        if (page == null && size == null) {
+        boolean parameterised = page != null || size != null || sort != null
+                || status != null || search != null || jobType != null;
+        if (!parameterised) {
             log.info("Received request for all job postings (no pagination)");
             return ResponseEntity.ok(jobPostService.getAllJobPosts());
         }
 
-        int pageIndex = page != null ? page : 0;
-        int pageSize = size != null ? size : 10;
-        if (pageIndex < 0 || pageSize < 1) {
-            throw new IllegalArgumentException("page must be >= 0 and size must be >= 1");
-        }
-        log.info("Received request for job postings page={} size={}", pageIndex, pageSize);
-        return ResponseEntity.ok(jobPostService.getJobPosts(pageIndex, pageSize));
+        log.info("Received request for job postings page={} size={} sort={} status={} search={} jobType={}",
+                page, size, sort, status, search, jobType);
+        return ResponseEntity.ok(jobPostService.searchJobPosts(JobPostSearchRequest.builder()
+                .page(page)
+                .size(size)
+                .sort(sort)
+                .status(status)
+                .search(search)
+                .jobType(jobType)
+                .build()));
+    }
+
+    /**
+     * Counts postings per status bucket, for labelling a status filter
+     * ({@code Active (12)}, {@code Expired (25)}, {@code All Status (37)}).
+     *
+     * <p>Counts cover the whole filtered result set rather than a single page, and
+     * are also embedded in the paginated {@code /getPost} response — this endpoint
+     * exists for clients that need them without fetching rows.</p>
+     *
+     * @param search  optional free-text term, matched as in {@code /getPost}
+     * @param jobType optional job type, matched as in {@code /getPost}
+     * @return counts for {@code all}, {@code active} and {@code expired}
+     */
+    @GetMapping("/counts")
+    @PreAuthorize("hasAuthority('JOB_POST_READ')")
+    public ResponseEntity<JobStatusCountsDTO> getStatusCounts(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String jobType) {
+        log.info("Received request for job status counts search={} jobType={}", search, jobType);
+        return ResponseEntity.ok(jobPostService.getStatusCounts(search, jobType));
+    }
+
+    /**
+     * Lists the job types currently in use, for populating a filter dropdown.
+     *
+     * <p>Values differing only by case or separators ({@code "Full-Time"} vs
+     * {@code "full time"}) collapse into one entry, so every option maps to exactly
+     * one result set when passed back as {@code jobType}.</p>
+     *
+     * @return distinct job types sorted alphabetically, ignoring case
+     */
+    @GetMapping("/job-types")
+    @PreAuthorize("hasAuthority('JOB_POST_READ')")
+    public ResponseEntity<List<String>> getJobTypes() {
+        log.info("Received request for distinct job types");
+        return ResponseEntity.ok(jobPostService.getDistinctJobTypes());
     }
 
     /**

@@ -2,9 +2,10 @@ package com.rightpath.service;
 
 import java.util.List;
 
-import org.springframework.data.domain.Page;
-
+import com.rightpath.dto.JobListingResponse;
 import com.rightpath.dto.JobPostDTO;
+import com.rightpath.dto.JobPostSearchRequest;
+import com.rightpath.dto.JobStatusCountsDTO;
 import com.rightpath.entity.JobPost;
 
 /**
@@ -40,13 +41,40 @@ public interface JobPostService {
     public List<JobPostDTO> getAllJobPosts();
 
     /**
-     * Retrieves a page of job posts, newest first (by id descending).
+     * Retrieves a filtered, sorted page of job posts together with the size of
+     * each status bucket for the same search / job-type filter.
      *
-     * @param page zero-based page index.
-     * @param size page size.
-     * @return A page of JobPostDTOs in descending order.
+     * <p>Defaults applied to an empty request: page 0, size 20 (capped at 100),
+     * sort {@code applicationDeadline,asc} and status {@code ACTIVE}. The sort is
+     * always given {@code id} as a final tiebreaker so consecutive pages cannot
+     * overlap or drop rows.</p>
+     *
+     * @param request raw query parameters; defaulting and validation happen here.
+     * @return A page of JobPostDTOs plus status counts.
+     * @throws IllegalArgumentException if page/size/sort/status are unusable.
      */
-    public Page<JobPostDTO> getJobPosts(int page, int size);
+    public JobListingResponse searchJobPosts(JobPostSearchRequest request);
+
+    /**
+     * Counts postings per status bucket for a search / job-type filter, across all
+     * pages.
+     *
+     * @param search  optional free-text term; blank means no text filtering.
+     * @param jobType optional job type; blank means no type filtering.
+     * @return counts for all/active/expired.
+     */
+    public JobStatusCountsDTO getStatusCounts(String search, String jobType);
+
+    /**
+     * Lists the job types in use, for populating a filter dropdown.
+     *
+     * <p>Values that differ only by case or separators are collapsed into a single
+     * entry (matching how {@code jobType} filtering compares values), represented
+     * by their most commonly stored spelling.</p>
+     *
+     * @return distinct job types sorted alphabetically, ignoring case.
+     */
+    public List<String> getDistinctJobTypes();
 
     /**
      * Finds a job post by its unique job prefix.

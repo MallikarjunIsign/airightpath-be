@@ -12,6 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -20,7 +21,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "job_posts")
+@Table(
+		name = "job_posts",
+		// The listing endpoint filters/sorts on the deadline on every request, and
+		// narrows by job type whenever the type dropdown is used.
+		indexes = {
+				@Index(name = "idx_job_posts_application_deadline", columnList = "application_deadline"),
+				@Index(name = "idx_job_posts_job_type", columnList = "job_type")
+		})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
