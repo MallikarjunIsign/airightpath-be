@@ -1,7 +1,6 @@
 package com.rightpath.service.impl;
 
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -10,7 +9,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -32,6 +30,7 @@ import com.rightpath.repository.JobPostSpecifications;
 import com.rightpath.repository.JobPostRepository.JobTypeCount;
 import com.rightpath.repository.UsersRepository;
 import com.rightpath.service.JobPostService;
+import com.rightpath.util.BusinessSchedule;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -47,13 +46,13 @@ public class JobPostServiceImpl implements JobPostService {
 	private JobApplicationForCandidateRepository jobApplicationRepository;
 
 	/**
-	 * Timezone the business operates in. Deadlines are plain dates, so "is this
-	 * job still active?" must be answered against the date it is <em>here</em> —
-	 * not in the caller's zone and not in the database session's zone, either of
-	 * which could expire a posting hours early or late.
+	 * Deadlines are plain dates, so "is this job still active?" must be answered
+	 * against the date it is in the business timezone — not in the caller's zone and
+	 * not in the database session's zone, either of which could expire a posting
+	 * hours early or late.
 	 */
-	@Value("${app.business-timezone:Asia/Kolkata}")
-	private String businessTimezone;
+	@Autowired
+	private BusinessSchedule businessSchedule;
 
 	/** Default page size when the client does not ask for one. */
 	private static final int DEFAULT_PAGE_SIZE = 20;
@@ -97,7 +96,7 @@ public class JobPostServiceImpl implements JobPostService {
 				.salaryRange(dto.getSalaryRange()).jobType(dto.getJobType()).industry(dto.getIndustry())
 				.department(dto.getDepartment()).role(dto.getRole()).numberOfOpenings(dto.getNumberOfOpenings())
 				.contactEmail(dto.getContactEmail()).applicationDeadline(dto.getApplicationDeadline())
-				.createdAt(LocalDate.now()).build();
+				.createdAt(businessSchedule.today()).build();
 
 		return repository.save(jobPost);
 	}
@@ -120,7 +119,7 @@ public class JobPostServiceImpl implements JobPostService {
 		Specification<JobPost> filters = JobPostSpecifications.combine(
 				JobPostSpecifications.matchesSearch(request.getSearch()),
 				JobPostSpecifications.matchesJobType(request.getJobType()));
-		Specification<JobPost> statusFilter = JobPostSpecifications.hasStatus(status, businessToday());
+		Specification<JobPost> statusFilter = JobPostSpecifications.hasStatus(status, businessSchedule.today());
 
 		Page<JobPostDTO> page = repository
 				.findAll(JobPostSpecifications.combine(filters, statusFilter), pageable)
@@ -179,13 +178,8 @@ public class JobPostServiceImpl implements JobPostService {
 	private JobStatusCountsDTO countBuckets(Specification<JobPost> filters) {
 		long all = repository.count(filters);
 		long active = repository.count(JobPostSpecifications.combine(filters,
-				JobPostSpecifications.hasStatus(JobStatusFilter.ACTIVE, businessToday())));
+				JobPostSpecifications.hasStatus(JobStatusFilter.ACTIVE, businessSchedule.today())));
 		return new JobStatusCountsDTO(all, active, all - active);
-	}
-
-	/** Today's date in the configured business timezone. */
-	private LocalDate businessToday() {
-		return LocalDate.now(ZoneId.of(businessTimezone));
 	}
 
 	/** Applies paging defaults and limits, and resolves the requested ordering. */

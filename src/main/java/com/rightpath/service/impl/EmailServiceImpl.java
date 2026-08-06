@@ -2,7 +2,6 @@ package com.rightpath.service.impl;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +21,7 @@ import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.repository.UsersRepository;
 import com.rightpath.service.EmailService;
 import com.rightpath.service.WhatsAppService;
+import com.rightpath.util.BusinessSchedule;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
@@ -35,19 +35,34 @@ public class EmailServiceImpl implements EmailService {
     private final JobApplicationForCandidateRepository jobApplicationRepository;
 
     private static final String LOGO_CID = "rightpath-logo";
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd MMMM yyyy");
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("hh:mm a");
+
+    /**
+     * Parameter key carrying a scheduled slot into a template. Its value must be a
+     * {@link LocalDateTime} — templates render it through
+     * {@link BusinessSchedule#formatForTemplate(Object)}, never directly, so a
+     * pre-formatted or ISO string cannot reach candidate-facing copy.
+     */
+    public static final String EXAM_SCHEDULE_PARAM = "examSchedule";
+
+    /**
+     * Every schedule shown to a candidate is rendered through this, so all
+     * templates read identically ({@code Wed, 12 Aug 2026, 02:30 PM IST}) and no
+     * raw ISO value can reach an email body.
+     */
+    private final BusinessSchedule businessSchedule;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
 
     @Autowired
     public EmailServiceImpl(JavaMailSender mailSender, WhatsAppService whatsAppService,
-                          UsersRepository userRepository, JobApplicationForCandidateRepository jobApplicationRepository) {
+                          UsersRepository userRepository, JobApplicationForCandidateRepository jobApplicationRepository,
+                          BusinessSchedule businessSchedule) {
         this.mailSender = mailSender;
         this.whatsAppService = whatsAppService;
         this.userRepository = userRepository;
         this.jobApplicationRepository = jobApplicationRepository;
+        this.businessSchedule = businessSchedule;
     }
 
     
@@ -273,18 +288,16 @@ public class EmailServiceImpl implements EmailService {
                         <p>Dear Candidate,</p>
                         <p>Please review the schedule below and be ready ahead of time:</p>
                         <table style='width:100%%;border-collapse:collapse;margin:20px 0'>
-                          <tr><th style='padding:8px;border:1px solid #ddd;background:#f4f4f4'>Date</th><td style='padding:8px;border:1px solid #ddd'>%s</td></tr>
-                          <tr><th style='padding:8px;border:1px solid #ddd;background:#f4f4f4'>Start&nbsp;Time</th><td style='padding:8px;border:1px solid #ddd'>%s</td></tr>
-                          <tr><th style='padding:8px;border:1px solid #ddd;background:#f4f4f4'>End&nbsp;Time</th><td style='padding:8px;border:1px solid #ddd'>%s</td></tr>
+                          <tr><th style='padding:8px;border:1px solid #ddd;background:#f4f4f4'>Starts</th><td style='padding:8px;border:1px solid #ddd'>%s</td></tr>
+                          <tr><th style='padding:8px;border:1px solid #ddd;background:#f4f4f4'>Ends</th><td style='padding:8px;border:1px solid #ddd'>%s</td></tr>
                         </table>
                         <p>Log in 10&nbsp;minutes early and click <em>Start&nbsp;Exam</em>. Ensure a stable connection and quiet environment.</p>
                         <p style='margin-top:30px'>Good luck!<br/><strong>The RightPath Exams Team</strong></p>
                       </div>
                     </body></html>
-                    """, getLogoHtml(), 
-                    startTime.format(DATE_FORMATTER), 
-                    startTime.format(TIME_FORMATTER), 
-                    endTime.format(TIME_FORMATTER));
+                    """, getLogoHtml(),
+                    businessSchedule.format(startTime),
+                    businessSchedule.format(endTime));
                 break;
 
             case OTP:
@@ -401,11 +414,10 @@ public class EmailServiceImpl implements EmailService {
                           <p>You are shortlisted for <strong>%s (%s)</strong>.</p>
                           <p>Your test is scheduled on:</p>
                           <ul>
-                            <li><strong>Date:</strong> %s</li>
-                            <li><strong>Time:</strong> %s</li>
+                            <li><strong>Date &amp; Time:</strong> %s</li>
                           </ul>
                           <p style='text-align: center; margin: 25px 0;'>
-                            <a href="%s" style="background-color: #28a745; color: white; padding: 12px 25px; 
+                            <a href="%s" style="background-color: #28a745; color: white; padding: 12px 25px;
                                text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
                               Acknowledge
                             </a>
@@ -420,8 +432,7 @@ public class EmailServiceImpl implements EmailService {
                     params.get("lastName"),
                     params.get("jobTitle"),
                     params.get("jobPrefix"),
-                    params.get("examDate"),
-                    params.get("examTime"),
+                    businessSchedule.formatForTemplate(params.get(EXAM_SCHEDULE_PARAM)),
                     params.get("acknowledgeUrl")
                 );
                 break;
@@ -438,8 +449,7 @@ public class EmailServiceImpl implements EmailService {
                           <p>We have received your acknowledgement for the <strong>%s</strong> position.</p>
                           <p>Your test details:</p>
                           <ul>
-                            <li><strong>Date:</strong> %s</li>
-                            <li><strong>Time:</strong> %s</li>
+                            <li><strong>Date &amp; Time:</strong> %s</li>
                           </ul>
                           <p>Please arrive 15 minutes early at our office.</p>
                           <hr style='border: 0; height: 1px; background: #e0e0e0; margin: 20px 0;' />
@@ -452,8 +462,7 @@ public class EmailServiceImpl implements EmailService {
                     params.get("firstName"),
                     params.get("lastName"),
                     params.get("jobTitle"),
-                    params.get("examDate"),
-                    params.get("examTime")
+                    businessSchedule.formatForTemplate(params.get(EXAM_SCHEDULE_PARAM))
                 );
                 break;
 
@@ -468,8 +477,7 @@ public class EmailServiceImpl implements EmailService {
                           <p>Hi <strong>%s %s</strong>,</p>
                           <p>This is a reminder for your upcoming test for <strong>%s (%s)</strong>:</p>
                           <ul>
-                            <li><strong>Date:</strong> %s</li>
-                            <li><strong>Time:</strong> %s</li>
+                            <li><strong>Date &amp; Time:</strong> %s</li>
                             <li><strong>Venue:</strong> RightPath Office, Narsingi, Hyderabad</li>
                           </ul>
                           <p>Please bring:</p>
@@ -489,8 +497,7 @@ public class EmailServiceImpl implements EmailService {
                     params.get("lastName"),
                     params.get("jobTitle"),
                     params.get("jobPrefix"),
-                    params.get("examDate"),
-                    params.get("examTime")
+                    businessSchedule.formatForTemplate(params.get(EXAM_SCHEDULE_PARAM))
                 );
                 break;
 

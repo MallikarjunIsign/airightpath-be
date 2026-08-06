@@ -3,9 +3,6 @@ package com.rightpath.service.impl;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,6 +34,7 @@ import com.rightpath.repository.UsersRepository;
 import com.rightpath.service.JobApplicationForCandidateService;
 import com.rightpath.service.ResumeService;
 import com.rightpath.service.WhatsAppService;
+import com.rightpath.util.BusinessSchedule;
 import com.rightpath.util.StatusTransitionValidator;
 import com.rightpath.util.SynonymLoader;
 
@@ -70,6 +68,10 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
 
     @Autowired
     private AssessmentRepository assessmentRepository;
+
+    /** Owns the business timezone: "now" for validation, and display formatting. */
+    @Autowired
+    private BusinessSchedule businessSchedule;
 
     private static final Logger logger = LoggerFactory.getLogger(JobApplicationForCandidateServiceImpl.class);
 
@@ -110,8 +112,11 @@ public class JobApplicationForCandidateServiceImpl implements JobApplicationForC
         JobPost jobPost = jobPostRepository.findByJobPrefix(dto.getJobPrefix())
                 .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + dto.getJobPrefix()));
 
+        // Business date, so this agrees with the ACTIVE/EXPIRED buckets the job
+        // listing shows; on a UTC server LocalDate.now() would close applications
+        // for a job the candidate can still see as active (and vice versa).
         if (jobPost.getApplicationDeadline() != null
-                && LocalDate.now().isAfter(jobPost.getApplicationDeadline())) {
+                && businessSchedule.today().isAfter(jobPost.getApplicationDeadline())) {
             throw new ApplicationDeadlinePassedException(
                     "Application deadline for " + jobPost.getJobTitle() + " has passed");
         }
@@ -513,7 +518,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	    }
     
 	    @Override
-	    public void sendAcknowledgementMailAndUpdateStatus(String jobPrefix, String email, String date, String time) {
+	    public void sendAcknowledgementMailAndUpdateStatus(String jobPrefix, String email, LocalDateTime examSlot) {
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository
 	                .findByJobPrefixAndEmail(jobPrefix, email);
 	        JobPost jobs = jobPostRepository.findByJobPrefix(jobPrefix)
@@ -523,8 +528,10 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	            throw new ResourceNotFoundException("No application found for the given job prefix and email.");
 	        }
 
-	        if (date == null || date.isBlank() || time == null || time.isBlank()) {
-	            throw new IllegalArgumentException("Date and time are required for acknowledgement mail.");
+	        // The slot is parsed and checked against the business clock at the endpoint,
+	        // before any mail goes out; reaching here without one is a programming error.
+	        if (examSlot == null) {
+	            throw new IllegalArgumentException("Date & time is required.");
 	        }
 
 	        JobApplicationForCandidate application = applications.get(0);
@@ -533,16 +540,10 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.ACKNOWLEDGED);
 
 	        try {
-	            DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-	            DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-
-	            LocalDate examDate = LocalDate.parse(date.trim(), dateFormatter);
-	            LocalTime examTime = LocalTime.parse(time.trim(), timeFormatter);
-
 	            application.setStatus(ApplicationStatus.ACKNOWLEDGED);
 	            application.setConfirmationStatus("Confirmation Sent");
-	            application.setExamDate(examDate);
-	            application.setExamTime(examTime);
+	            application.setExamDate(examSlot.toLocalDate());
+	            application.setExamTime(examSlot.toLocalTime());
 	            applicationForCandidateRepository.save(application);
 
 	            String acknowledgeUrl = baseUrl +"/api/job-applications/acknowledge?jobPrefix="
@@ -555,8 +556,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	            emailParams.put("lastName", application.getLastName());
 	            emailParams.put("jobTitle", jobs.getJobTitle());
 	            emailParams.put("jobPrefix", jobPrefix);
-	            emailParams.put("examDate", date);
-	            emailParams.put("examTime", time);
+	            // The template formats this for display; never hand it a pre-formatted or
+	            // ISO string.
+	            emailParams.put(EmailServiceImpl.EXAM_SCHEDULE_PARAM, examSlot);
 	            emailParams.put("acknowledgeUrl", acknowledgeUrl);
 	            emailParams.put("mobileNumber", application.getMobileNumber());
 
@@ -565,12 +567,10 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	            whatsAppService.sendWhatsAppMessage(
 	                    application.getMobileNumber(),
 	                    WhatsAppService.MessageType.EXAM_SCHEDULE,
-	                    LocalDateTime.of(application.getExamDate(), application.getExamTime()),
-	                    LocalDateTime.of(application.getExamDate(), application.getExamTime().plusHours(1))
+	                    examSlot,
+	                    examSlot.plusHours(1)
 	                );
 
-	        } catch (DateTimeParseException e) {
-	            throw new IllegalArgumentException("Failed to parse date or time: " + e.getMessage());
 	        } catch (Exception e) {
 	            throw new RuntimeException("Error during acknowledgement process: " + e.getMessage());
 	        }
@@ -611,10 +611,10 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        emailParams.put("firstName", application.getFirstName());
 	        emailParams.put("lastName", application.getLastName());
 	        emailParams.put("jobTitle", application.getJobPost().getJobTitle());
-	        emailParams.put("examDate", application.getExamDate().toString());
-	        emailParams.put("examTime", application.getExamTime().toString());
+	        emailParams.put(EmailServiceImpl.EXAM_SCHEDULE_PARAM,
+	                LocalDateTime.of(application.getExamDate(), application.getExamTime()));
 	        emailParams.put("mobileNumber", application.getMobileNumber());
-	        
+
 	        emailService.sendUniversalEmail(EmailType.ACKNOWLEDGEMENT_CONFIRMATION, emailParams);
 
 	        // WhatsApp notification remains the same
@@ -657,8 +657,8 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        emailParams.put("lastName", application.getLastName());
 	        emailParams.put("jobTitle", application.getJobPost().getJobTitle());
 	        emailParams.put("jobPrefix", jobPrefix);
-	        emailParams.put("examDate", application.getExamDate().toString());
-	        emailParams.put("examTime", application.getExamTime().toString());
+	        emailParams.put(EmailServiceImpl.EXAM_SCHEDULE_PARAM,
+	                LocalDateTime.of(application.getExamDate(), application.getExamTime()));
 	        emailParams.put("mobileNumber", application.getMobileNumber());
 
 	        emailService.sendUniversalEmail(EmailType.RECONFIRMATION, emailParams);
@@ -793,7 +793,7 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 
 	    @Override
 	    @Transactional
-	    public void sendExamLink(String jobPrefix, String email, String dateTime) {
+	    public void sendExamLink(String jobPrefix, String email, LocalDateTime examSlot) {
 	        List<JobApplicationForCandidate> applications = applicationForCandidateRepository
 	                .findByJobPrefixAndEmail(jobPrefix, email);
 
@@ -815,12 +815,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	        // Validate workflow transition: RECONFIRMED → EXAM_SENT
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.EXAM_SENT);
 
-	        LocalDateTime startTime;
-	        if (dateTime != null && !dateTime.isEmpty()) {
-	            startTime = LocalDateTime.parse(dateTime);
-	        } else {
-	            startTime = LocalDateTime.now();
-	        }
+	        // No slot supplied means "start now" — in the business timezone, so a
+	        // UTC-hosted server does not tell the candidate an exam started 5:30 ago.
+	        LocalDateTime startTime = examSlot != null ? examSlot : businessSchedule.now();
 	        LocalDateTime endTime = startTime.plusHours(1);
 
 	        // Send the exam-schedule email FIRST. If it fails it throws, the transaction

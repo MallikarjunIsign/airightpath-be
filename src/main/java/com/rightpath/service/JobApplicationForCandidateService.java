@@ -1,5 +1,6 @@
 package com.rightpath.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -93,10 +94,10 @@ public interface JobApplicationForCandidateService {
      *
      * @param jobPrefix Job identifier.
      * @param email Candidate's email.
-     * @param date Date of communication.
-     * @param time Time of communication.
+     * @param examSlot Scheduled exam date-time as business-zone wall-clock time,
+     *                 already validated as present and not in the past by the caller.
      */
-    void sendAcknowledgementMailAndUpdateStatus(String jobPrefix, String email, String date, String time);
+    void sendAcknowledgementMailAndUpdateStatus(String jobPrefix, String email, LocalDateTime examSlot);
 
     /**
      * Acknowledges a candidate manually and returns a response.
@@ -185,8 +186,10 @@ public interface JobApplicationForCandidateService {
      *
      * @param jobPrefix Job identifier.
      * @param email Candidate's email.
-     * @param dateTime Combined date-time string (e.g. "2025-03-15T14:30").
+     * @param examSlot Scheduled start as business-zone wall-clock time, already
+     *                 validated as not in the past by the caller; {@code null}
+     *                 starts the exam window now.
      */
-    void sendExamLink(String jobPrefix, String email, String dateTime);
+    void sendExamLink(String jobPrefix, String email, LocalDateTime examSlot);
 
 }

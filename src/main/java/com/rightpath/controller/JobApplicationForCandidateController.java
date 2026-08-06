@@ -1,7 +1,6 @@
 	package com.rightpath.controller;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +31,7 @@ import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.rbac.PermissionName;
 import com.rightpath.service.JobApplicationForCandidateService;
 import com.rightpath.service.impl.EmailServiceImpl;
+import com.rightpath.util.BusinessSchedule;
 
 @RestController
 @RequestMapping("/api/job-applications")
@@ -51,6 +51,10 @@ public class JobApplicationForCandidateController {
 
     @Autowired
     private EmailServiceImpl emailService;
+
+    /** Parses and validates scheduled slots against the business clock (IST). */
+    @Autowired
+    private BusinessSchedule businessSchedule;
 
     private static final String WS_TOPIC = "/queue/updates";
     private static final String WS_TYPE = "APPLICATION_UPDATE";
@@ -302,7 +306,11 @@ public class JobApplicationForCandidateController {
     }
 
     /**
-     * Send acknowledgement mail and update status (bulk support)
+     * Send acknowledgement mail and update status (bulk support).
+     *
+     * <p>The requested slot is parsed and checked against the business clock
+     * <em>before</em> the send loop starts, so a missing or past {@code dateTime}
+     * fails the whole request with HTTP 400 and mails nobody.</p>
      */
     @PostMapping("/send-ack-mail")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
@@ -311,33 +319,21 @@ public class JobApplicationForCandidateController {
         String jobPrefix = request.getJobPrefix();
 
         if (request.getEmails() == null || request.getEmails().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "At least one email is required"));
+            throw new IllegalArgumentException("At least one email is required.");
         }
 
         if (jobPrefix == null || jobPrefix.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Job prefix is required"));
+            throw new IllegalArgumentException("Job prefix is required.");
         }
 
-        // dateTime is required for ack mail (email contains exam schedule)
-        if (request.getDateTime() == null || request.getDateTime().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Date & Time is required for acknowledgement mail"));
-        }
-
-        // Parse combined dateTime (e.g. "2025-03-15T14:30") into separate date and time
-        String date;
-        String time;
-        try {
-            LocalDateTime ldt = LocalDateTime.parse(request.getDateTime());
-            date = ldt.toLocalDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-            time = ldt.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Invalid dateTime format. Expected: yyyy-MM-ddTHH:mm"));
-        }
+        // dateTime is required for ack mail (the email states the exam schedule) and
+        // must not already have passed. Throws IllegalArgumentException -> 400.
+        LocalDateTime examSlot = businessSchedule.requireFutureSlot(request.getDateTime());
 
         boolean hasValidationError = false;
         for (String email : request.getEmails()) {
             try {
-                applicationForCandidateService.sendAcknowledgementMailAndUpdateStatus(jobPrefix, email, date, time);
+                applicationForCandidateService.sendAcknowledgementMailAndUpdateStatus(jobPrefix, email, examSlot);
                 sendWebSocketNotification(email, jobPrefix, "CONFIRMATION_SENT", "Confirmation email sent to candidate");
             } catch (IllegalStateException e) {
                 errors.add(email + ": " + e.getMessage());
@@ -506,12 +502,23 @@ public class JobApplicationForCandidateController {
     
     
     /**
-     * Send exam link to candidates (bulk support)
+     * Send exam link to candidates (bulk support).
+     *
+     * <p>{@code dateTime} is optional here — omitting it starts the exam window
+     * immediately — but a supplied slot must not already have passed, and is
+     * checked before any mail goes out.</p>
      */
     @PostMapping("/send-exam-link")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
     public ResponseEntity<?> sendExamLink(@RequestBody BulkMailRequestDTO request) {
         String jobPrefix = request.getJobPrefix();
+
+        if (request.getEmails() == null || request.getEmails().isEmpty()) {
+            throw new IllegalArgumentException("At least one email is required.");
+        }
+
+        // Throws IllegalArgumentException -> 400 before anyone is mailed.
+        LocalDateTime examSlot = businessSchedule.optionalFutureSlot(request.getDateTime());
 
         List<String> sent = new ArrayList<>();
         List<Map<String, String>> failed = new ArrayList<>();
@@ -520,7 +527,7 @@ public class JobApplicationForCandidateController {
             try {
                 // Only marks EXAM_SENT if an assessment exists and the email is sent
                 // (enforced transactionally in the service).
-                applicationForCandidateService.sendExamLink(jobPrefix, email, request.getDateTime());
+                applicationForCandidateService.sendExamLink(jobPrefix, email, examSlot);
                 sendWebSocketNotification(email, jobPrefix, "EXAM_SENT", "Exam link sent to candidate");
                 sent.add(email);
             } catch (Exception e) {
