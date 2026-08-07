@@ -6,9 +6,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -16,9 +19,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.rightpath.dto.JobApplicationForCandidateDTO;
+import com.rightpath.dto.ScreeningResponseDTO;
+import com.rightpath.dto.ScreeningResultDTO;
 import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.entity.JobPost;
 import com.rightpath.entity.Users;
@@ -256,6 +263,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setResumeFileName(app.getResumeFileName());
         dto.setContentType(app.getContentType());
         dto.setStatus(app.getStatus() != null ? app.getStatus().name() : null);
+        // Score from the last screening run. Read paths surface it without re-scoring;
+        // a screening run overwrites it with the freshly computed value.
+        dto.setMatchPercent(app.getMatchPercent());
         dto.setConfirmationStatus(app.getConfirmationStatus());
         dto.setAcknowledgedStatus(app.getAcknowledgedStatus());
         dto.setReconfirmationStatus(app.getReconfirmationStatus());
@@ -333,87 +343,211 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
     
     /**
      * MAIN METHOD TO PROCESS ALL CANDIDATES
+     *
+     * @deprecated screens the entire job on every call; use
+     *             {@link #screenCandidates(String, java.util.List)} instead.
      */
     @Override
+    @Deprecated(since = "2026-08")
+    @Transactional
     public List<JobApplicationForCandidateDTO> filterCandidatesByPrefix(String jobPrefix) {
-        JobPost jobPost = jobPostRepository.findByJobPrefix(jobPrefix)
-                .orElseThrow(() -> new ResourceNotFoundException("Job not found with prefix: " + jobPrefix));
-
-        String[] requiredSkills = jobPost.getKeySkills().toLowerCase().split(",\\s*");
+        JobPost jobPost = requireJobPost(jobPrefix);
+        String[] requiredSkills = requiredSkills(jobPost);
         Map<String, List<String>> synonyms = synonymLoader.getSynonymMap();
-
-        List<JobApplicationForCandidate> applicants = applicationForCandidateRepository.findByJobPost(jobPost);
 
         List<JobApplicationForCandidateDTO> processedList = new ArrayList<>();
 
-        for (JobApplicationForCandidate app : applicants) {
-            double matchPercent = calculateMatchPercent(app, requiredSkills, synonyms);
-
-            // Recompute and persist the shortlist decision on EVERY run so the
-            // status matches the current score (e.g. after a resume edit + re-screen).
-            // Only candidates in the ATS screening phase are (re)evaluated; see
-            // isAtsScreenable for what is intentionally left untouched.
-            if (isAtsScreenable(app)) {
-                boolean shortlisted = matchPercent >= atsThreshold;
-                // Set directly rather than via StatusTransitionValidator: a re-screen is
-                // an in-phase re-evaluation (REJECTED->SHORTLISTED, or same->same), which
-                // the forward-only pipeline validator intentionally forbids.
-                app.setStatus(shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED);
-                // Record the ATS scan and shortlist outcomes in their own columns.
-                app.setAtsScanStatus("Screening Completed");
-                app.setShortlistStatus(shortlisted ? "Shortlisted" : "Not Shortlisted");
-                applicationForCandidateRepository.save(app);
-            }
+        for (JobApplicationForCandidate app : applicationForCandidateRepository.findByJobPost(jobPost)) {
+            ScreeningResultDTO result = screenOne(app, requiredSkills, synonyms);
 
             JobApplicationForCandidateDTO dto = convertToDTO(app);
-            dto.setMatchPercent(matchPercent);
+            // Every row is scored even when the decision is not persisted, so this
+            // response keeps showing a live match% for candidates further along.
+            dto.setMatchPercent(result.matchPercent());
             processedList.add(dto);
         }
         return processedList;
     }
 
+    @Override
+    @Transactional
+    public ScreeningResponseDTO screenCandidates(String jobPrefix, List<String> emails) {
+        JobPost jobPost = requireJobPost(jobPrefix);
+        String[] requiredSkills = requiredSkills(jobPost);
+        Map<String, List<String>> synonyms = synonymLoader.getSynonymMap();
+
+        List<JobApplicationForCandidate> applicants = applicationForCandidateRepository.findByJobPost(jobPost);
+        boolean wholeJob = (emails == null || emails.isEmpty());
+        List<ScreeningResultDTO> results = new ArrayList<>();
+
+        if (wholeJob) {
+            for (JobApplicationForCandidate app : applicants) {
+                results.add(screenOne(app, requiredSkills, synonyms));
+            }
+        } else {
+            Map<String, JobApplicationForCandidate> byEmail = new HashMap<>();
+            for (JobApplicationForCandidate app : applicants) {
+                if (app.getUser() != null && app.getUser().getEmail() != null) {
+                    byEmail.putIfAbsent(normalizeEmail(app.getUser().getEmail()), app);
+                }
+            }
+
+            // Walk the caller's list, not the applicant list: the response comes back
+            // in the order the rows were selected, and an email with no application
+            // is reported rather than silently dropped.
+            Set<String> alreadyRequested = new LinkedHashSet<>();
+            for (String email : emails) {
+                if (email == null || email.isBlank()) {
+                    continue;
+                }
+                if (!alreadyRequested.add(normalizeEmail(email))) {
+                    continue;
+                }
+                JobApplicationForCandidate app = byEmail.get(normalizeEmail(email));
+                results.add(app == null
+                        ? ScreeningResultDTO.notFound(email.trim())
+                        : screenOne(app, requiredSkills, synonyms));
+            }
+        }
+
+        ScreeningResponseDTO response = ScreeningResponseDTO.of(jobPrefix, atsThreshold,
+                wholeJob ? ScreeningResponseDTO.SCOPE_ALL : ScreeningResponseDTO.SCOPE_SELECTED, results);
+        logger.info("ATS screening on {} ({}): {}", jobPrefix, response.scope(), response.message());
+        return response;
+    }
+
     /**
-     * Whether an application may be (re)evaluated by ATS screening on this run.
+     * Screens one application: always scores it, but only persists the shortlist
+     * decision when the row is still in the screening phase.
      *
-     * <ul>
-     *   <li>APPLIED — the first screen.</li>
-     *   <li>SHORTLISTED / REJECTED that ATS itself produced (atsScanStatus =
-     *       "Screening Completed") and that was not subsequently closed by a
-     *       manual or written-test rejection (rejectionStatus set) — these may be
-     *       re-screened, e.g. after a resume edit, so the decision tracks the new score.</li>
-     * </ul>
-     *
-     * Everything else is left untouched: candidates who have progressed past
-     * shortlisting (ACKNOWLEDGED onward) must not be reverted, referral
-     * auto-shortlists (never ATS-screened) keep their status, and manually/test-
-     * rejected candidates are not resurrected.
+     * <p>The score is computed even for a skipped row so the caller can show what the
+     * candidate <em>would</em> have scored without that number changing anything.</p>
      */
-    private boolean isAtsScreenable(JobApplicationForCandidate app) {
+    private ScreeningResultDTO screenOne(JobApplicationForCandidate app, String[] requiredSkills,
+                                         Map<String, List<String>> synonyms) {
+        String email = app.getUser() != null ? app.getUser().getEmail() : null;
+        String fullName = (trimToEmpty(app.getFirstName()) + " " + trimToEmpty(app.getLastName())).trim();
+        double matchPercent = calculateMatchPercent(app, requiredSkills, synonyms);
+
+        String blockReason = screeningBlockReason(app);
+        if (blockReason != null) {
+            return ScreeningResultDTO.skipped(email, fullName, matchPercent,
+                    app.getStatus() != null ? app.getStatus().name() : null, blockReason);
+        }
+
+        // Recompute and persist the shortlist decision on EVERY run so the status
+        // matches the current score (e.g. after a resume edit + re-screen).
+        boolean shortlisted = matchPercent >= atsThreshold;
+        // Set directly rather than via StatusTransitionValidator: a re-screen is an
+        // in-phase re-evaluation (REJECTED->SHORTLISTED, or same->same), which the
+        // forward-only pipeline validator intentionally forbids.
+        app.setStatus(shortlisted ? ApplicationStatus.SHORTLISTED : ApplicationStatus.REJECTED);
+        app.setMatchPercent(matchPercent);
+        // Record the ATS scan and shortlist outcomes in their own columns.
+        app.setAtsScanStatus("Screening Completed");
+        app.setShortlistStatus(shortlisted ? "Shortlisted" : "Not Shortlisted");
+        applicationForCandidateRepository.save(app);
+
+        return ScreeningResultDTO.screened(email, fullName, matchPercent, app.getStatus().name());
+    }
+
+    /**
+     * Why ATS screening must leave this application alone, or null if it may be
+     * (re)evaluated on this run.
+     *
+     * <p>Screenable is: APPLIED (the first screen), or a SHORTLISTED/REJECTED row that
+     * ATS itself produced (atsScanStatus = "Screening Completed") and that was not
+     * subsequently closed by a finalised rejection. Such rows may be re-screened —
+     * e.g. after a resume edit — so the decision tracks the new score.</p>
+     *
+     * <p>Everything else is left untouched: candidates who have progressed past
+     * shortlisting (ACKNOWLEDGED onward) must not be reverted, referral
+     * auto-shortlists (never ATS-screened) keep their status, and manually or
+     * test-rejected candidates are not resurrected behind a recruiter's back.</p>
+     */
+    private String screeningBlockReason(JobApplicationForCandidate app) {
         ApplicationStatus status = app.getStatus();
 
         if (status == ApplicationStatus.APPLIED) {
-            return true;
+            return null;
         }
-
-        boolean previouslyScreened = "Screening Completed".equals(app.getAtsScanStatus());
-        boolean inScreeningPhase = status == ApplicationStatus.SHORTLISTED || status == ApplicationStatus.REJECTED;
-        boolean manuallyClosed = app.getRejectionStatus() != null && !app.getRejectionStatus().isBlank();
-
-        return previouslyScreened && inScreeningPhase && !manuallyClosed;
+        if (status == null) {
+            return "Application has no status; screening skipped.";
+        }
+        if (status != ApplicationStatus.SHORTLISTED && status != ApplicationStatus.REJECTED) {
+            return "Candidate has progressed to " + JobApplicationForCandidateDTO.humanizeStage(status.name())
+                    + "; re-screening would undo pipeline progress.";
+        }
+        if (!"Screening Completed".equals(app.getAtsScanStatus())) {
+            return "Shortlisted without ATS screening (e.g. referral); left as-is.";
+        }
+        if (app.getRejectionStatus() != null && !app.getRejectionStatus().isBlank()) {
+            return "Rejection is final (" + app.getRejectionStatus()
+                    + "); re-screening cannot reopen it. Use manual shortlist with override.";
+        }
+        return null;
     }
 
+    /**
+     * Reads the shortlisted candidates. Read-only by design: listing a job's
+     * shortlist must not re-score anyone, or merely opening the tab would rewrite
+     * every applicant's status. Run {@link #screenCandidates(String, List)} to screen.
+     */
     @Override
     public List<JobApplicationForCandidateDTO> getShortlistedCandidatesByPrefix(String jobPrefix) {
-        return filterCandidatesByPrefix(jobPrefix).stream()
-                .filter(dto -> "SHORTLISTED".equalsIgnoreCase(dto.getStatus()))
+        return applicationsWithStatus(jobPrefix, ApplicationStatus.SHORTLISTED);
+    }
+
+    /**
+     * Reads the rejected candidates. Read-only, for the same reason as
+     * {@link #getShortlistedCandidatesByPrefix(String)}.
+     */
+    @Override
+    public List<JobApplicationForCandidateDTO> getRejectedCandidatesByPrefix(String jobPrefix) {
+        return applicationsWithStatus(jobPrefix, ApplicationStatus.REJECTED);
+    }
+
+    private List<JobApplicationForCandidateDTO> applicationsWithStatus(String jobPrefix, ApplicationStatus status) {
+        return applicationForCandidateRepository.findByJobPost(requireJobPost(jobPrefix)).stream()
+                .filter(app -> app.getStatus() == status)
+                .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public List<JobApplicationForCandidateDTO> getRejectedCandidatesByPrefix(String jobPrefix) {
-        return filterCandidatesByPrefix(jobPrefix).stream()
-                .filter(dto -> "REJECTED".equalsIgnoreCase(dto.getStatus()))
-                .collect(Collectors.toList());
+    private JobPost requireJobPost(String jobPrefix) {
+        return jobPostRepository.findByJobPrefix(jobPrefix)
+                .orElseThrow(() -> new ResourceNotFoundException("Job not found with prefix: " + jobPrefix));
+    }
+
+    /**
+     * The job's key skills, as the lowercase tokens screening scores against.
+     * A job with none cannot be screened — say so plainly instead of failing with a
+     * NullPointerException halfway through a batch.
+     */
+    private static String[] requiredSkills(JobPost jobPost) {
+        String keySkills = jobPost.getKeySkills();
+        if (keySkills == null || keySkills.isBlank()) {
+            throw new IllegalStateException("Job " + jobPost.getJobPrefix()
+                    + " has no key skills configured, so ATS screening cannot score candidates.");
+        }
+        return keySkills.toLowerCase().split(",\\s*");
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Email of the authenticated recruiter, as set by the JWT filter. Falls back to
+     * "system" for non-request callers so an override is never logged without an actor.
+     */
+    private static String actingUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return (authentication == null || authentication.getName() == null) ? "system" : authentication.getName();
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     public JobApplicationForCandidateDTO getApplicationByJobPrefixAndEmail(String jobPrefix, String email) {
@@ -450,6 +584,12 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
     @Override
     @Transactional
     public void shortlistCandidateWithoutAts(String jobPrefix, String email) {
+        shortlistCandidateWithoutAts(jobPrefix, email, false);
+    }
+
+    @Override
+    @Transactional
+    public void shortlistCandidateWithoutAts(String jobPrefix, String email, boolean override) {
         List<JobApplicationForCandidate> applications =
                 applicationForCandidateRepository.findByJobPrefixAndEmail(jobPrefix, email);
         if (applications.isEmpty()) {
@@ -458,13 +598,28 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 
         JobApplicationForCandidate application = applications.get(0);
 
-        // Manual shortlist bypasses ATS but still respects the workflow: only an
-        // APPLIED application may move to SHORTLISTED. Anything else (already
-        // shortlisted, rejected, or further along) throws and is reported as failed.
-        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.SHORTLISTED);
+        // "Shortlist Anyway": the recruiter is deliberately reopening a closed
+        // application. REJECTED is terminal in the forward-only pipeline, so the
+        // validator is bypassed for this one move rather than relaxed — every other
+        // transition, including from SELECTED or mid-pipeline, still goes through it.
+        boolean reopeningRejection = override && application.getStatus() == ApplicationStatus.REJECTED;
+
+        if (reopeningRejection) {
+            logger.info("Rejection overridden for {} on job {} by {}: REJECTED -> SHORTLISTED (was '{}')",
+                    email, jobPrefix, actingUser(), application.getRejectionStatus());
+            // Clearing the finalised-rejection marker returns the row to the ATS
+            // screening phase, so a later re-screen can evaluate it again; leaving it
+            // set would shortlist the candidate but lock them out of screening.
+            application.setRejectionStatus(null);
+        } else {
+            // Manual shortlist bypasses ATS but still respects the workflow: only an
+            // APPLIED application may move to SHORTLISTED. Anything else (already
+            // shortlisted, rejected, or further along) throws and is reported as failed.
+            StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.SHORTLISTED);
+        }
 
         application.setStatus(ApplicationStatus.SHORTLISTED);
-        application.setShortlistStatus("Shortlisted");
+        application.setShortlistStatus(reopeningRejection ? "Shortlisted (Override)" : "Shortlisted");
         applicationForCandidateRepository.save(application);
 
         // Notify the candidate (email + WhatsApp), same as ATS shortlisting.

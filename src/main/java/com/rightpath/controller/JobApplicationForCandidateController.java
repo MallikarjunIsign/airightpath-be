@@ -26,6 +26,9 @@ import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rightpath.dto.BulkMailRequestDTO;
 import com.rightpath.dto.JobApplicationForCandidateDTO;
+import com.rightpath.dto.ScreeningRequestDTO;
+import com.rightpath.dto.ScreeningResponseDTO;
+import com.rightpath.dto.ScreeningResultDTO;
 import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.repository.JobApplicationForCandidateRepository;
 import com.rightpath.rbac.PermissionName;
@@ -159,12 +162,46 @@ public class JobApplicationForCandidateController {
     }
 
     /**
-     * Filter candidates by jobPrefix
+     * Filter candidates by jobPrefix.
+     *
+     * @deprecated This route screens (and rewrites the status of) every applicant on
+     *             the job, despite being a GET. Use {@code POST /screen} instead: it
+     *             can screen a chosen subset and reports what it did per candidate.
      */
+    @Deprecated(since = "2026-08")
     @GetMapping("/filterByPrefix/{jobPrefix}")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
     public ResponseEntity<List<JobApplicationForCandidateDTO>> filterCandidatesByPrefix(@PathVariable String jobPrefix) {
         return ResponseEntity.ok(applicationForCandidateService.filterCandidatesByPrefix(jobPrefix));
+    }
+
+    /**
+     * Run ATS screening over a chosen set of candidates, or the whole job.
+     *
+     * <p>Body: {@code { "jobPrefix": "...", "emails": ["a@x.com", ...] }}. Omit
+     * {@code emails} (or send an empty list) to screen every applicant.</p>
+     *
+     * <p>Screening only touches applications still in the screening phase. A candidate
+     * who has reached EXAM_SENT or INTERVIEW_SCHEDULED is reported in the response as
+     * skipped, with the reason, and is never walked back to the shortlist stage.</p>
+     */
+    @PostMapping("/screen")
+    @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
+    public ResponseEntity<ScreeningResponseDTO> screenCandidates(@RequestBody ScreeningRequestDTO request) {
+        if (request.getJobPrefix() == null || request.getJobPrefix().isBlank()) {
+            throw new IllegalArgumentException("Job prefix is required.");
+        }
+
+        ScreeningResponseDTO response =
+            applicationForCandidateService.screenCandidates(request.getJobPrefix(), request.getEmails());
+
+        for (ScreeningResultDTO result : response.results()) {
+            if (result.screened()) {
+                sendWebSocketNotification(result.email(), request.getJobPrefix(), result.status(),
+                    "Screening completed: " + result.status());
+            }
+        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -241,8 +278,14 @@ public class JobApplicationForCandidateController {
 
     /**
      * Recruiter: Manually shortlist candidates without ATS screening.
-     * Body: { "jobPrefix": "...", "emails": ["a@x.com", ...] }.
-     * Only APPLIED candidates are shortlisted; others are returned in failed[].
+     *
+     * <p>Body: {@code { "jobPrefix": "...", "emails": [...], "override": false }}.
+     * Only APPLIED candidates are shortlisted; others are returned in failed[].</p>
+     *
+     * <p>Set {@code override} to true for "Shortlist Anyway" — it reopens a REJECTED
+     * application, which is otherwise terminal. This is the supported way back from a
+     * rejection; it clears the finalised-rejection marker so the candidate can also be
+     * re-screened afterwards.</p>
      */
     @PatchMapping("/shortlist")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
@@ -261,7 +304,7 @@ public class JobApplicationForCandidateController {
 
         for (String email : request.getEmails()) {
             try {
-                applicationForCandidateService.shortlistCandidateWithoutAts(jobPrefix, email);
+                applicationForCandidateService.shortlistCandidateWithoutAts(jobPrefix, email, request.isOverride());
                 sendWebSocketNotification(email, jobPrefix, "SHORTLISTED", "Candidate shortlisted");
                 sent.add(email);
             } catch (Exception e) {
@@ -288,7 +331,10 @@ public class JobApplicationForCandidateController {
     }
 
     /**
-     * ATS Screening - Shortlisted Candidates
+     * ATS Screening - Shortlisted Candidates.
+     *
+     * <p>Read-only: this lists the current shortlist, it does not screen. Call
+     * {@code POST /screen} to (re)run screening.</p>
      */
     @GetMapping("/ats-screening/{jobPrefix}")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
@@ -297,7 +343,10 @@ public class JobApplicationForCandidateController {
     }
 
     /**
-     * ATS Screening - Rejected Candidates
+     * ATS Screening - Rejected Candidates.
+     *
+     * <p>Read-only, like {@code /ats-screening}: opening the rejected list must not
+     * re-score the job.</p>
      */
     @GetMapping("/ats-rejected/{jobPrefix}")
     @PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
