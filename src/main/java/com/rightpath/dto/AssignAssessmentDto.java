@@ -26,4 +26,18 @@ public class AssignAssessmentDto {
     private boolean adminAcceptance = false;
     private String adminComments;
     private String jobPrefix;
+
+    /**
+     * Exam timing chosen by the admin, per assessment type. Only the
+     * minutes-per-question values drive the exam clock; the counts and estimates
+     * are what the admin was shown at assign time and are kept for reporting.
+     * All are null when the type is not being assigned, or when an older client
+     * omits them.
+     */
+    private Integer aptitudeMinutesPerQuestion;
+    private Integer aptitudeQuestionCount;
+    private Integer aptitudeEstimatedDurationMinutes;
+    private Integer codingMinutesPerQuestion;
+    private Integer codingQuestionCount;
+    private Integer codingEstimatedDurationMinutes;
 }

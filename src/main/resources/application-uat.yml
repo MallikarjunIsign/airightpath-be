@@ -129,6 +129,7 @@ aws:
     prefix:
       interview: interview
       exam: exam
+      proctoring: proctoring
 
 management:
   endpoints:

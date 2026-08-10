@@ -3,6 +3,7 @@ package com.rightpath.entity;
 import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.rightpath.enums.AssessmentType;
 
 import jakarta.annotation.Nullable;
@@ -90,5 +91,41 @@ public class Assessment {
 
     @Column(length = 100, unique = true)
     private String fileName;
+
+    /**
+     * Minutes the admin allowed per question when assigning this paper. The exam
+     * clock is this multiplied by the real question count, so this is the
+     * authoritative half of the allowance. Null on rows assigned before
+     * per-question timing existed, which lets the client fall back to its default
+     * for the assessment type.
+     */
+    @Column(name = "minutes_per_question")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer minutesPerQuestion;
+
+    /**
+     * A fixed exam length that overrides the per-question calculation outright.
+     * Null unless someone deliberately pins the duration for this assignment.
+     */
+    @Column(name = "duration_minutes")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer durationMinutes;
+
+    /**
+     * Question count as counted at assign time. Informational only — the real
+     * duration is recomputed from the stored paper when the exam opens, so a
+     * mistyped count here cannot shorten a candidate's exam.
+     */
+    @Column(name = "question_count")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer questionCount;
+
+    /**
+     * Count times minutes as estimated at assign time. Informational, kept for
+     * reporting on what the admin was shown when they assigned the paper.
+     */
+    @Column(name = "estimated_duration_minutes")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer estimatedDurationMinutes;
 
 }

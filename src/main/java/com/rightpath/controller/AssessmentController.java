@@ -25,6 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
@@ -42,6 +43,15 @@ import jakarta.persistence.EntityNotFoundException;
 @RestController
 @RequestMapping("/api")
 public class AssessmentController {
+
+	/**
+	 * Bounds on the per-question allowance. The exam clock is this multiplied by
+	 * the question count, so a typo here would either give a candidate no time at
+	 * all or an exam that outlives its own deadline.
+	 */
+	private static final int MIN_MINUTES_PER_QUESTION = 1;
+	private static final int MAX_MINUTES_PER_QUESTION = 600;
+
 	@Autowired
 	private final AssessmentService assessmentService;
 	@Autowired
@@ -92,7 +102,13 @@ public class AssessmentController {
         @RequestPart(value = "codingQuestionPaper", required = false) MultipartFile codingQuestionPaper,
         @RequestPart(value = "aptitudeAnswerKey", required = false) MultipartFile aptitudeAnswerKey,
         @RequestPart("uploadedBy") String uploadedBy,
-        @RequestPart("jobPrefix") String jobPrefix
+        @RequestPart("jobPrefix") String jobPrefix,
+        @RequestParam(value = "aptitudeMinutesPerQuestion", required = false) String aptitudeMinutesPerQuestion,
+        @RequestParam(value = "aptitudeQuestionCount", required = false) String aptitudeQuestionCount,
+        @RequestParam(value = "aptitudeEstimatedDurationMinutes", required = false) String aptitudeEstimatedDurationMinutes,
+        @RequestParam(value = "codingMinutesPerQuestion", required = false) String codingMinutesPerQuestion,
+        @RequestParam(value = "codingQuestionCount", required = false) String codingQuestionCount,
+        @RequestParam(value = "codingEstimatedDurationMinutes", required = false) String codingEstimatedDurationMinutes
     ) {
         Map<String, String> response = new HashMap<>();
 
@@ -119,6 +135,26 @@ public class AssessmentController {
         dto.setUploadedBy(uploadedBy);
         dto.setJobPrefix(jobPrefix);
 
+        // Exam timing. Absent values leave the columns null, which the client reads
+        // as "use the default for this assessment type" — the behaviour before
+        // per-question timing existed.
+        try {
+            dto.setAptitudeMinutesPerQuestion(
+                    parseMinutesPerQuestion(aptitudeMinutesPerQuestion, "aptitudeMinutesPerQuestion"));
+            dto.setAptitudeQuestionCount(parseCount(aptitudeQuestionCount, "aptitudeQuestionCount"));
+            dto.setAptitudeEstimatedDurationMinutes(
+                    parseCount(aptitudeEstimatedDurationMinutes, "aptitudeEstimatedDurationMinutes"));
+            dto.setCodingMinutesPerQuestion(
+                    parseMinutesPerQuestion(codingMinutesPerQuestion, "codingMinutesPerQuestion"));
+            dto.setCodingQuestionCount(parseCount(codingQuestionCount, "codingQuestionCount"));
+            dto.setCodingEstimatedDurationMinutes(
+                    parseCount(codingEstimatedDurationMinutes, "codingEstimatedDurationMinutes"));
+        } catch (IllegalArgumentException e) {
+            response.put("status", "error");
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+
         // Call service
         assessmentService.assignAssessment(dto, jobPrefix);
 
@@ -126,6 +162,50 @@ public class AssessmentController {
         response.put("message", "Assessments assigned successfully");
         return ResponseEntity.ok(response);
     }
+
+	/**
+	 * Reads a per-question allowance, which drives the exam clock and so has to be
+	 * a sane positive number.
+	 *
+	 * @param raw   the submitted value, possibly absent
+	 * @param field the field name, for the error message
+	 * @return the parsed allowance, or null when not submitted
+	 */
+	private static Integer parseMinutesPerQuestion(String raw, String field) {
+		Integer value = parseOptionalInt(raw, field);
+		if (value != null && (value < MIN_MINUTES_PER_QUESTION || value > MAX_MINUTES_PER_QUESTION)) {
+			throw new IllegalArgumentException(field + " must be between " + MIN_MINUTES_PER_QUESTION + " and "
+					+ MAX_MINUTES_PER_QUESTION + " minutes, received: " + value);
+		}
+		return value;
+	}
+
+	/**
+	 * Reads one of the informational counts. These never shorten an exam, so they
+	 * only have to be non-negative.
+	 *
+	 * @param raw   the submitted value, possibly absent
+	 * @param field the field name, for the error message
+	 * @return the parsed count, or null when not submitted
+	 */
+	private static Integer parseCount(String raw, String field) {
+		Integer value = parseOptionalInt(raw, field);
+		if (value != null && value < 0) {
+			throw new IllegalArgumentException(field + " must not be negative, received: " + value);
+		}
+		return value;
+	}
+
+	private static Integer parseOptionalInt(String raw, String field) {
+		if (raw == null || raw.isBlank()) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(raw.trim());
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException(field + " must be a whole number, received: " + raw);
+		}
+	}
 
 
 	/**
@@ -373,6 +453,20 @@ public class AssessmentController {
 		);
 
 		return ResponseEntity.ok(questions);
+	}
+
+	/**
+	 * Endpoint serving one assessment's paper together with the timing that
+	 * governs it, so the exam screen can size its clock from the real question
+	 * count and the allowance the admin chose.
+	 *
+	 * @param id Assessment ID
+	 * @return The paper plus {@code minutesPerQuestion} / {@code durationMinutes},
+	 *         each omitted when the assessment predates per-question timing
+	 */
+	@GetMapping("/assessment-content/{id}")
+	public ResponseEntity<AssessmentContentDto> getAssessmentContent(@PathVariable Long id) {
+		return ResponseEntity.ok(assessmentService.getAssessmentContent(id));
 	}
 
 	@GetMapping("/assessments/content/latest")

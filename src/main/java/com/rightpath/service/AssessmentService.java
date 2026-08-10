@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
@@ -147,6 +148,14 @@ public interface AssessmentService {
 
 	List<Map<String, Object>> getLatestAssessmentContent(String jobPrefix, String candidateEmail,
 			String assessmentType);
+
+	/**
+	 * Fetches one assessment's paper together with the timing that governs it.
+	 *
+	 * @param assessmentId The ID of the assessment.
+	 * @return The paper and the per-question allowance chosen when it was assigned.
+	 */
+	AssessmentContentDto getAssessmentContent(Long assessmentId);
 
 	List<Result> getResultsByEmailAndJobPrefix(String email, String jobPrefix);
 }

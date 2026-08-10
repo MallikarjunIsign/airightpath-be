@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
@@ -299,6 +300,9 @@ public class AssessmentServiceImpl implements AssessmentService {
 				aptitudeAssessment.setJobPrefix(jobPrefix);
 				aptitudeAssessment.setAdminAcceptance(dto.isAdminAcceptance());
 				aptitudeAssessment.setAdminComments(dto.getAdminComments());
+				aptitudeAssessment.setMinutesPerQuestion(dto.getAptitudeMinutesPerQuestion());
+				aptitudeAssessment.setQuestionCount(dto.getAptitudeQuestionCount());
+				aptitudeAssessment.setEstimatedDurationMinutes(dto.getAptitudeEstimatedDurationMinutes());
 
 				if (dto.getAptitudeAnswerKey() != null) {
 					try {
@@ -326,6 +330,9 @@ public class AssessmentServiceImpl implements AssessmentService {
 				codingAssessment.setJobPrefix(jobPrefix);
 				codingAssessment.setAdminAcceptance(dto.isAdminAcceptance());
 				codingAssessment.setAdminComments(dto.getAdminComments());
+				codingAssessment.setMinutesPerQuestion(dto.getCodingMinutesPerQuestion());
+				codingAssessment.setQuestionCount(dto.getCodingQuestionCount());
+				codingAssessment.setEstimatedDurationMinutes(dto.getCodingEstimatedDurationMinutes());
 				assessmentRepository.save(codingAssessment);
 			}
 
@@ -484,6 +491,43 @@ public class AssessmentServiceImpl implements AssessmentService {
 		} catch (IOException e) {
 			throw new RuntimeException("Failed to parse assessment JSON from storage", e);
 		}
+	}
+
+	@Override
+	public AssessmentContentDto getAssessmentContent(Long assessmentId) {
+		Assessment assessment = assessmentRepository.findById(assessmentId)
+				.orElseThrow(() -> new ResourceNotFoundException("Assessment not found with id: " + assessmentId));
+
+		// Read the paper into a local rather than onto the entity: this method runs in
+		// a transaction, so assigning it back would flush the whole paper into the
+		// questionPaper column on every read.
+		String fileContent = assessment.getQuestionPaper();
+		if (fileContent == null && assessment.getContainerName() != null && assessment.getFileName() != null) {
+			fileContent = downloadFileContentFromStorage(assessment.getContainerName(), assessment.getFileName());
+		}
+		if (fileContent == null) {
+			throw new ResourceNotFoundException("No question paper stored for assessment id: " + assessmentId);
+		}
+
+		List<Map<String, Object>> questions;
+		try {
+			questions = new ObjectMapper().readValue(fileContent, new TypeReference<List<Map<String, Object>>>() {
+			});
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to parse assessment JSON for assessment id: " + assessmentId, e);
+		}
+
+		return new AssessmentContentDto(
+				assessment.getId(),
+				assessment.getAssessmentType(),
+				assessment.getJobPrefix(),
+				assessment.getCandidateEmail(),
+				assessment.getStartTime(),
+				assessment.getDeadline(),
+				assessment.isExamAttended(),
+				assessment.getMinutesPerQuestion(),
+				assessment.getDurationMinutes(),
+				questions);
 	}
 
 	@Override
