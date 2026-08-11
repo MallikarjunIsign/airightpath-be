@@ -34,6 +34,8 @@ import com.rightpath.exceptions.JobDeadlineInPastException;
 import com.rightpath.exceptions.JobPostNotFoundException;
 import com.rightpath.exceptions.JobPrefixImmutableException;
 import com.rightpath.exceptions.CompilerException;
+import com.rightpath.exceptions.CompilerToolchainException;
+import com.rightpath.exceptions.UnsupportedLanguageException;
 import com.rightpath.exceptions.CustomException;
 import com.rightpath.exceptions.InactiveUserException;
 import com.rightpath.exceptions.InvalidAccessTokenException;
@@ -378,6 +380,38 @@ public class GlobalExceptionHandler {
                 "A file or I/O error occurred while processing your request.", req, null);
     }
 
+    /**
+     * A language we cannot run. The client picked it, so this is a 400 and the
+     * message names what would have worked.
+     */
+    @ExceptionHandler(UnsupportedLanguageException.class)
+    public ResponseEntity<ApiError> handleUnsupportedLanguage(UnsupportedLanguageException ex,
+            HttpServletRequest req) {
+        logger.warn("Unsupported language at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.COMPILER_UNSUPPORTED_LANGUAGE, ex.getMessage(), req, null);
+    }
+
+    /**
+     * The compiler or interpreter is missing from this server. That is an
+     * operational failure, so it answers 503 — a candidate should be told to try
+     * again rather than shown a compile error about code that is fine.
+     */
+    @ExceptionHandler(CompilerToolchainException.class)
+    public ResponseEntity<ApiError> handleCompilerToolchain(CompilerToolchainException ex, HttpServletRequest req) {
+        logger.error("Compiler toolchain unavailable at {}: {}", req.getRequestURI(), ex.getMessage(), ex);
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.COMPILER_UNAVAILABLE,
+                "The code execution service is temporarily unavailable. Your answer is saved — please run it again.",
+                req, null);
+    }
+
+    /**
+     * A submission we could not process at all — missing script or language.
+     *
+     * <p>Note what does <em>not</em> reach here: code that fails to compile,
+     * crashes, times out or prints the wrong answer. Those are ordinary results
+     * of running a candidate's code and come back 200 with a per-case status, not
+     * as errors.</p>
+     */
     @ExceptionHandler(CompilerException.class)
     public ResponseEntity<ApiError> handleCompiler(CompilerException ex, HttpServletRequest req) {
         logger.warn("Compiler error at {}: {}", req.getRequestURI(), ex.getMessage());

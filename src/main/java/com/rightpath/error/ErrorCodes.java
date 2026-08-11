@@ -45,6 +45,13 @@ public final class ErrorCodes {
     public static final String JOB_DEADLINE_IN_PAST = "JOB_DEADLINE_IN_PAST";
 
     public static final String COMPILER_ERROR = "COMPILER_ERROR";
+    /** The submission named a language this platform does not run. */
+    public static final String COMPILER_UNSUPPORTED_LANGUAGE = "COMPILER_UNSUPPORTED_LANGUAGE";
+    /**
+     * The toolchain is missing or broken on the server. Ours to fix, not the
+     * candidate's — the exam screen should offer a retry, not blame their code.
+     */
+    public static final String COMPILER_UNAVAILABLE = "COMPILER_UNAVAILABLE";
 
     // AI Service
     public static final String AI_SERVICE_TIMEOUT = "AI_SERVICE_TIMEOUT";

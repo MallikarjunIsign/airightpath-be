@@ -102,11 +102,33 @@ public class LocalCompileService implements CompileService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
+            // Drain stdout on its own thread, before waiting. Reading only after
+            // waitFor deadlocks as soon as the program prints more than the pipe
+            // buffer holds: the child blocks writing, we block waiting, and a
+            // program that had finished its work is reported as a timeout.
+            StringBuilder output = new StringBuilder();
+            Thread drain = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (output) {
+                            output.append(line).append("\n");
+                        }
+                    }
+                } catch (IOException e) {
+                    log.debug("Output stream closed early: {}", e.getMessage());
+                }
+            }, "local-compile-drain");
+            drain.setDaemon(true);
+            drain.start();
+
             // Provide stdin if any
             if (request.getStdin() != null && !request.getStdin().isBlank()) {
                 try (OutputStream os = process.getOutputStream()) {
                     os.write(request.getStdin().getBytes());
                     os.flush();
+                } catch (IOException e) {
+                    log.debug("Program did not read its input: {}", e.getMessage());
                 }
             }
 
@@ -117,13 +139,8 @@ public class LocalCompileService implements CompileService {
                 return response;
             }
 
-            // Capture output
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                StringBuilder output = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
+            drain.join(2000);
+            synchronized (output) {
                 response.setOutput(output.toString().trim());
             }
 
