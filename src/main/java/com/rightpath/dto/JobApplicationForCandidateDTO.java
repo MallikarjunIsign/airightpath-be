@@ -1,5 +1,7 @@
 package com.rightpath.dto;
 
+import java.time.LocalDateTime;
+
 import org.springframework.web.multipart.MultipartFile;
 
 import com.drew.lang.annotations.NotNull;
@@ -76,6 +78,15 @@ public class JobApplicationForCandidateDTO {
 	    private String companyName;
 	    private String applicationDeadline;
 
+	    /**
+	     * When the candidate submitted this application, set once on persist.
+	     *
+	     * Exposed so an admin reading the pipeline can tell a application filed
+	     * this morning from one that has been sitting untouched for three weeks —
+	     * the status column alone says nothing about age.
+	     */
+	    private LocalDateTime createdAt;
+
 	    
 	    public JobApplicationForCandidateDTO(JobApplicationForCandidate entity) {
 	        this.id = entity.getId();
@@ -100,6 +111,7 @@ public class JobApplicationForCandidateDTO {
 	        this.rejectionStatus = entity.getRejectionStatus();
 	        this.writtenTestStatus = entity.getWrittenTestStatus();
 	        this.interview = entity.getInterview();
+	        this.createdAt = entity.getCreatedAt();
 	        this.currentStage = humanizeStage(this.status);
 	        this.atsScanStatus = deriveAtsScanStatus(entity.getAtsScanStatus(), this.status);
 	        this.shortlistStatus = deriveShortlistStatus(entity.getShortlistStatus(), this.status);

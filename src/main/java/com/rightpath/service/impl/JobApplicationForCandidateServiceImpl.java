@@ -280,6 +280,9 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         dto.setRejectionStatus(app.getRejectionStatus());
         dto.setWrittenTestStatus(app.getWrittenTestStatus());
         dto.setInterview(app.getInterview());
+        // When the candidate applied. Also set by the DTO's entity constructor,
+        // but this mapper is what every admin read path goes through.
+        dto.setCreatedAt(app.getCreatedAt());
         dto.setCurrentStage(JobApplicationForCandidateDTO.humanizeStage(dto.getStatus()));
         dto.setAtsScanStatus(JobApplicationForCandidateDTO.deriveAtsScanStatus(app.getAtsScanStatus(), dto.getStatus()));
         dto.setShortlistStatus(JobApplicationForCandidateDTO.deriveShortlistStatus(app.getShortlistStatus(), dto.getStatus()));

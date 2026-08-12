@@ -66,4 +66,13 @@ public class JobPostDTO {
 	private String contactEmail;
 
 	private LocalDate applicationDeadline;
+
+	/**
+	 * When this posting was created, in the business timezone.
+	 *
+	 * Read-only: the server sets it at creation and ignores whatever a client
+	 * sends. Exposed so admins can see how long a job has been open when reading
+	 * its applications.
+	 */
+	private LocalDate createdAt;
 }

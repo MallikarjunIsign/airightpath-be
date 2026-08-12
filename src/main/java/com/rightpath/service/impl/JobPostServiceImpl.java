@@ -377,7 +377,7 @@ public class JobPostServiceImpl implements JobPostService {
 				.experience(post.getExperience()).education(post.getEducation()).salaryRange(post.getSalaryRange())
 				.jobType(post.getJobType()).industry(post.getIndustry()).department(post.getDepartment())
 				.role(post.getRole()).numberOfOpenings(post.getNumberOfOpenings()).contactEmail(post.getContactEmail())
-				.applicationDeadline(post.getApplicationDeadline()).build();
+				.applicationDeadline(post.getApplicationDeadline()).createdAt(post.getCreatedAt()).build();
 	}
 
 	public String applyToJob(Long jobId, String userEmail) {

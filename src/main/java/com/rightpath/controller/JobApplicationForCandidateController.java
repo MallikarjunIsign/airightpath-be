@@ -254,6 +254,7 @@ public class JobApplicationForCandidateController {
         dto.setExamLinkStatus(entity.getExamLinkStatus());
         dto.setExamCompletedStatus(entity.getExamCompletedStatus());
         dto.setRejectionStatus(entity.getRejectionStatus());
+        dto.setCreatedAt(entity.getCreatedAt());
 
         return dto;
     }
