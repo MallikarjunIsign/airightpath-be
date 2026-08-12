@@ -2,7 +2,7 @@ package com.rightpath.service.impl;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -181,7 +181,8 @@ public class ExamProctoringServiceImpl implements ExamProctoringService {
         capture.setContentType(contentType);
         capture.setSizeBytes(file.getSize());
         capture.setCapturedAt(capturedAt);
-        capture.setUploadedAt(LocalDateTime.now());
+        // UTC for the same reason as capturedAt — both columns are zone-less.
+        capture.setUploadedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         return captureRepository.save(capture);
     }
@@ -265,11 +266,17 @@ public class ExamProctoringServiceImpl implements ExamProctoringService {
      */
     private LocalDateTime parseCapturedAt(String raw) {
         if (raw == null || raw.isBlank()) {
-            return LocalDateTime.now();
+            return LocalDateTime.now(ZoneOffset.UTC);
         }
         String value = raw.trim();
         try {
-            return OffsetDateTime.parse(value).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+            // UTC, not ZoneId.systemDefault(). The column is zone-less, so what
+            // it means has to be fixed by convention rather than by wherever the
+            // server happens to run — otherwise the same instant reads
+            // differently after a deploy to another region, and every stored row
+            // becomes ambiguous. The DTO republishes these as instants so the
+            // browser is never left guessing either.
+            return OffsetDateTime.parse(value).atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         } catch (DateTimeParseException ignored) {
             // Not an offset timestamp; try a local one below.
         }
@@ -277,7 +284,7 @@ public class ExamProctoringServiceImpl implements ExamProctoringService {
             return LocalDateTime.parse(value);
         } catch (DateTimeParseException e) {
             logger.warn("Unparseable capturedAt '{}' on a proctoring capture; recording server time instead", value);
-            return LocalDateTime.now();
+            return LocalDateTime.now(ZoneOffset.UTC);
         }
     }
 }
