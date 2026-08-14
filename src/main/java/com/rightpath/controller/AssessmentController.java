@@ -29,6 +29,7 @@ import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
+import com.rightpath.dto.AssignmentReportDTO;
 import com.rightpath.entity.Assessment;
 import com.rightpath.entity.Result;
 import com.rightpath.repository.AssessmentRepository;
@@ -94,7 +95,7 @@ public class AssessmentController {
 	 */
 	@PostMapping("/assign")
 	@PreAuthorize("hasAuthority('ASSESSMENT_ASSIGN')")
-    public ResponseEntity<Map<String, String>> assignAssessment(
+    public ResponseEntity<Map<String, Object>> assignAssessment(
         @RequestPart("candidateEmails") String candidateEmails,
         @RequestPart("startTime") String startTime,
         @RequestPart("deadline") String deadline,
@@ -110,7 +111,7 @@ public class AssessmentController {
         @RequestParam(value = "codingQuestionCount", required = false) String codingQuestionCount,
         @RequestParam(value = "codingEstimatedDurationMinutes", required = false) String codingEstimatedDurationMinutes
     ) {
-        Map<String, String> response = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
 
         // Parse datetime strings
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
@@ -156,11 +157,23 @@ public class AssessmentController {
         }
 
         // Call service
-        assessmentService.assignAssessment(dto, jobPrefix);
+        AssignmentReportDTO report = assessmentService.assignAssessment(dto, jobPrefix);
 
-        response.put("status", "success");
-        response.put("message", "Assessments assigned successfully");
-        return ResponseEntity.ok(response);
+        response.put("status", report.allNotified() ? "success" : "partial");
+        response.put("message", report.getMessage());
+        response.put("assigned", report.getAssigned());
+        response.put("notified", report.getNotified());
+        response.put("notNotified", report.getNotNotified());
+        response.put("assignedCount", report.getAssignedCount());
+        response.put("notifiedCount", report.getNotifiedCount());
+        response.put("notNotifiedCount", report.getNotNotifiedCount());
+
+        // 207 when the exams exist but some candidates were not emailed. A plain 200
+        // would report a mail outage as an unqualified success; the old 500 threw the
+        // whole assignment away over one rate-limited message.
+        return report.allNotified()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.status(HttpStatus.MULTI_STATUS).body(response);
     }
 
 	/**

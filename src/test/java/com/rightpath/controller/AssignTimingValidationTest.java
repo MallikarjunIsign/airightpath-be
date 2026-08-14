@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -20,6 +21,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.rightpath.dto.AssignAssessmentDto;
+import com.rightpath.dto.AssignmentReportDTO;
 import com.rightpath.service.AssessmentService;
 
 /**
@@ -43,11 +45,17 @@ class AssignTimingValidationTest {
 	void setUp() {
 		assessmentService = mock(AssessmentService.class);
 		controller = new AssessmentController(assessmentService);
+
+		// The endpoint now reports per-candidate delivery, so a stubbed assignment
+		// has to hand back a report; these cases only care about what got validated.
+		AssignmentReportDTO report = new AssignmentReportDTO();
+		report.recordNotified("candidate@example.com");
+		when(assessmentService.assignAssessment(any(AssignAssessmentDto.class), anyString())).thenReturn(report);
 	}
 
 	@Test
 	void theSubmittedAllowanceReachesTheService() {
-		ResponseEntity<Map<String, String>> response = assign("2", "30", "60", "25", "2", "50");
+		ResponseEntity<Map<String, Object>> response = assign("2", "30", "60", "25", "2", "50");
 
 		assertEquals(HttpStatus.OK, response.getStatusCode());
 
@@ -63,7 +71,7 @@ class AssignTimingValidationTest {
 
 	@Test
 	void anAssignmentWithNoTimingIsStillAccepted() {
-		ResponseEntity<Map<String, String>> response = assign(null, null, null, null, null, null);
+		ResponseEntity<Map<String, Object>> response = assign(null, null, null, null, null, null);
 
 		assertEquals(HttpStatus.OK, response.getStatusCode());
 
@@ -74,46 +82,46 @@ class AssignTimingValidationTest {
 
 	@Test
 	void aZeroAllowanceIsRefused() {
-		ResponseEntity<Map<String, String>> response = assign("0", null, null, null, null, null);
+		ResponseEntity<Map<String, Object>> response = assign("0", null, null, null, null, null);
 
 		assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
 		assertEquals("error", response.getBody().get("status"));
-		assertTrue(response.getBody().get("message").contains("aptitudeMinutesPerQuestion"));
+		assertTrue(String.valueOf(response.getBody().get("message")).contains("aptitudeMinutesPerQuestion"));
 		verify(assessmentService, never()).assignAssessment(any(), anyString());
 	}
 
 	@Test
 	void anAllowanceLongerThanAnyExamIsRefused() {
-		ResponseEntity<Map<String, String>> response = assign(null, null, null, "601", null, null);
+		ResponseEntity<Map<String, Object>> response = assign(null, null, null, "601", null, null);
 
 		assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-		assertTrue(response.getBody().get("message").contains("codingMinutesPerQuestion"));
+		assertTrue(String.valueOf(response.getBody().get("message")).contains("codingMinutesPerQuestion"));
 	}
 
 	@Test
 	void somethingThatIsNotANumberIsRefused() {
-		ResponseEntity<Map<String, String>> response = assign("twenty-five", null, null, null, null, null);
+		ResponseEntity<Map<String, Object>> response = assign("twenty-five", null, null, null, null, null);
 
 		assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-		assertTrue(response.getBody().get("message").contains("whole number"));
+		assertTrue(String.valueOf(response.getBody().get("message")).contains("whole number"));
 	}
 
 	@Test
 	void aNegativeQuestionCountIsRefused() {
-		ResponseEntity<Map<String, String>> response = assign("1", "-4", null, null, null, null);
+		ResponseEntity<Map<String, Object>> response = assign("1", "-4", null, null, null, null);
 
 		assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-		assertTrue(response.getBody().get("message").contains("aptitudeQuestionCount"));
+		assertTrue(String.valueOf(response.getBody().get("message")).contains("aptitudeQuestionCount"));
 	}
 
 	@Test
 	void blankFieldsAreTreatedAsAbsentRatherThanInvalid() {
-		ResponseEntity<Map<String, String>> response = assign("", "  ", "", "", "", "");
+		ResponseEntity<Map<String, Object>> response = assign("", "  ", "", "", "", "");
 
 		assertEquals(HttpStatus.OK, response.getStatusCode(), "an empty multipart field is a value nobody typed");
 	}
 
-	private ResponseEntity<Map<String, String>> assign(String aptitudeMinutes, String aptitudeCount,
+	private ResponseEntity<Map<String, Object>> assign(String aptitudeMinutes, String aptitudeCount,
 			String aptitudeEstimate, String codingMinutes, String codingCount, String codingEstimate) {
 
 		return controller.assignAssessment(

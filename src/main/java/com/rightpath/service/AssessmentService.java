@@ -8,6 +8,7 @@ import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
+import com.rightpath.dto.AssignmentReportDTO;
 import com.rightpath.entity.Assessment;
 import com.rightpath.entity.Result;
 
@@ -30,13 +31,19 @@ public interface AssessmentService {
     /**
      * Assigns an assessment to a candidate with a job-specific prefix.
      *
+     * <p>Assigning and notifying succeed or fail independently: the exam is
+     * created locally, the email leaves through a rate-limited third party. A
+     * candidate whose email could not be sent still has their assessment, and is
+     * named in the returned report so the recruiter can resend rather than
+     * discovering it when the candidate never turns up.</p>
+     *
      * @param dto The assignment details including candidate and assessment information.
      * @param jobPrefix The prefix for the job role or position.
-     * @return A message indicating the success or failure of the assignment.
-     * 
+     * @return who was assigned, and who could not be told about it.
+     *
      * Developer Note: Log assigned assessmentType, candidateEmail, and jobPrefix.
      */
-    String assignAssessment(AssignAssessmentDto dto, String jobPrefix);
+    AssignmentReportDTO assignAssessment(AssignAssessmentDto dto, String jobPrefix);
 
     /**
      * Retrieves all assessments assigned to a specific candidate.

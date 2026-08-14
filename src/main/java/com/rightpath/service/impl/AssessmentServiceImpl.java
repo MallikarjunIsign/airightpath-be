@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,6 +22,7 @@ import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
+import com.rightpath.dto.AssignmentReportDTO;
 import com.rightpath.entity.Assessment;
 import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.entity.Result;
@@ -36,6 +38,7 @@ import com.rightpath.service.EmailService;
 import com.rightpath.service.StorageService;
 import com.rightpath.util.StatusTransitionValidator;
 
+import jakarta.mail.MessagingException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 
@@ -276,13 +279,22 @@ public class AssessmentServiceImpl implements AssessmentService {
 	}
 
 	/**
-	 * Assigns an assessment to multiple candidates and sends exam links via email.
+	 * Assigns an assessment to multiple candidates and emails them their exam link.
+	 *
+	 * <p>The email is a notification, not part of the assignment. It goes out
+	 * through a third-party SMTP host that rate-limits, and letting that failure
+	 * escape aborted the whole request: the transaction rolled back every
+	 * candidate — including the ones already emailed — while the question papers
+	 * uploaded to storage stayed behind, and the recruiter got a 500 naming
+	 * nobody. A candidate who cannot be emailed now keeps their assessment and is
+	 * named in the report so the recruiter can resend.</p>
 	 *
 	 * @param dto The DTO containing assessment assignment details.
-	 * @return A success message.
+	 * @return who was assigned, and who could not be told about it.
 	 */
 	@Override
-	public String assignAssessment(AssignAssessmentDto dto, String jobPrefix) {
+	public AssignmentReportDTO assignAssessment(AssignAssessmentDto dto, String jobPrefix) {
+		AssignmentReportDTO report = new AssignmentReportDTO();
 		for (String email : dto.getCandidateEmails()) {
 			// Process Aptitude Assessment
 			if (dto.getAptitudeQuestionPaper() != null && !dto.getAptitudeQuestionPaper().isEmpty()) {
@@ -336,11 +348,49 @@ public class AssessmentServiceImpl implements AssessmentService {
 				assessmentRepository.save(codingAssessment);
 			}
 
-			// Send email and update status
-			emailService.sendExamLink(email, dto.getStartTime(), dto.getDeadline(), jobPrefix);
-			updateApplicationStatus(jobPrefix, email);
+			// Notify, then record the result. EXAM_SENT is only set once the mail has
+			// actually gone: the column reads "Exam Link Sent", and a candidate marked
+			// as told is one nobody will think to chase.
+			try {
+				emailService.sendExamLink(email, dto.getStartTime(), dto.getDeadline(), jobPrefix);
+				updateApplicationStatus(jobPrefix, email);
+				report.recordNotified(email);
+			} catch (RuntimeException e) {
+				// Only delivery failures are tolerated. Spring throws MailException
+				// directly and EmailServiceImpl wraps MessagingException in a plain
+				// RuntimeException, so both shapes arrive here — but anything else is a
+				// real fault and must not be filed as "the email didn't go out".
+				if (!isMailFailure(e)) {
+					throw e;
+				}
+				logger.warn("Assessment assigned to {} on job {}, but the exam-link email failed: {}",
+						email, jobPrefix, rootMessage(e));
+				report.recordNotNotified(email, rootMessage(e));
+			}
 		}
-		return "Assessments assigned successfully.";
+		return report;
+	}
+
+	/** True when this failure came out of the mail stack rather than our own code. */
+	private static boolean isMailFailure(Throwable error) {
+		for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+			if (cause instanceof MailException || cause instanceof MessagingException) {
+				return true;
+			}
+			if (cause == cause.getCause()) {
+				break;
+			}
+		}
+		return false;
+	}
+
+	/** The innermost message, which is the one naming what the mail host said. */
+	private static String rootMessage(Throwable error) {
+		Throwable cause = error;
+		while (cause.getCause() != null && cause.getCause() != cause) {
+			cause = cause.getCause();
+		}
+		return cause.getMessage();
 	}
 
 	private void updateApplicationStatus(String jobPrefix, String email) {

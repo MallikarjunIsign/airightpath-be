@@ -56,4 +56,11 @@ public final class ErrorCodes {
     // AI Service
     public static final String AI_SERVICE_TIMEOUT = "AI_SERVICE_TIMEOUT";
     public static final String AI_SERVICE_ERROR = "AI_SERVICE_ERROR";
+
+    /**
+     * The mail host refused or dropped the message — rate limits, auth, an
+     * unreachable relay. Upstream and usually transient, so the client should
+     * offer to retry the send rather than report the whole operation as broken.
+     */
+    public static final String EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED";
 }

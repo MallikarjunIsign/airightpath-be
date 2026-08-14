@@ -12,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mail.MailException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.InternalAuthenticationServiceException;
@@ -471,6 +472,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.AI_SERVICE_ERROR,
                 "Could not reach the AI service (network/DNS error). "
                         + "Please check the server's internet connectivity and try again.", req, null);
+    }
+
+    /**
+     * The mail host would not take the message.
+     *
+     * <p>Reaches here only from the operations where sending <em>is</em> the point
+     * — everything that merely notifies now treats a failed send as a reportable
+     * outcome instead. A rate limit or a dropped relay is upstream and transient,
+     * so it answers 502 with the host's own words rather than the generic 500
+     * "Something went wrong on our end", which told the recruiter nothing about
+     * whether to retry.</p>
+     */
+    @ExceptionHandler(MailException.class)
+    public ResponseEntity<ApiError> handleMailFailure(MailException ex, HttpServletRequest req) {
+        logger.error("Email delivery failed at {}: {}", req.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_GATEWAY, ErrorCodes.EMAIL_DELIVERY_FAILED,
+                "The email could not be sent: " + ex.getMessage() + " Nothing else was changed — try again shortly.",
+                req, null);
     }
 
     /**
