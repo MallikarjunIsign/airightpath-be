@@ -25,6 +25,7 @@ import org.springframework.security.core.userdetails.UserDetailsService; // Load
 import org.springframework.security.core.userdetails.UsernameNotFoundException; // Thrown if user is not found
 import org.springframework.security.crypto.password.PasswordEncoder; // Interface for encoding passwords
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile; // Represents uploaded file
 
 // Import custom project classes
@@ -122,7 +123,18 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 				grantedAuthorities);
 	}
 
-	// Add a new user to the system
+	/**
+	 * Registers a new user.
+	 *
+	 * <p>Transactional because the account and its default role have to land
+	 * together or not at all. Without it, {@code save} committed on its own and
+	 * anything that failed afterwards left the row behind: the caller saw the
+	 * registration fail, and every retry from then on answered 409 "Email already
+	 * exists" for an account that had never finished being created and could not
+	 * be logged into. Email is the primary key, so there is no second row to
+	 * create and no way for the candidate to clear it themselves.</p>
+	 */
+	@Transactional
 	public Map<String, String> addUser(UsersDto usersDto) {
 	    logger.info("Attempting to add new user: {}", usersDto.getEmail());
 
@@ -181,8 +193,18 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 	        throw e;
 	    }
 
-	    // ✅ 7. Send email
-	    emailService.sendSuccessRegistrationEmail(user.getEmail(), user.getLastName(), user.getFirstName(),user.getMobileNumber());
+	    // ✅ 7. Send the welcome email — best effort.
+	    // The account exists at this point. A greylisted or timed-out SMTP send used
+	    // to throw from here, which failed the registration the user had already
+	    // completed; unlike an exam link, a welcome mail is a courtesy and nothing
+	    // downstream depends on it having arrived.
+	    try {
+	        emailService.sendSuccessRegistrationEmail(user.getEmail(), user.getLastName(), user.getFirstName(),
+	                user.getMobileNumber());
+	    } catch (Exception e) {
+	        logger.warn("Welcome email failed for {}; the account was still created: {}",
+	                user.getEmail(), e.getMessage());
+	    }
 
 	    // ✅ 8. Return success
 	    return Map.of("message", "success");
