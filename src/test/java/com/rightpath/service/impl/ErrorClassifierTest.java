@@ -165,6 +165,34 @@ class ErrorClassifierTest {
 	}
 
 	@Test
+	void aTimeoutThatAlsoFloodedOutputNamesThePrinting() {
+		CodeErrorInfo error = classifier.runTimeout(5, true, 65536);
+
+		assertEquals(ExecutionStatus.TIMEOUT, error.getCategory());
+		// "Too slow" and "printing forever" send a candidate looking in different
+		// places, and the printing is also why their captured output stops abruptly.
+		assertTrue(error.getMessage().contains("65536"), error.getMessage());
+		assertTrue(error.getHint().contains("printing"), error.getHint());
+	}
+
+	@Test
+	void aTruncatedCrashIsStillClassifiedByItsThrowable() {
+		String trace = """
+				Exception in thread "main" java.lang.StackOverflowError
+					at Main.depth(Main.java:2)
+					at Main.depth(Main.java:2)
+				""";
+
+		CodeErrorInfo error = classifier.runtimeError(trace, Language.JAVA, 1, true, 2048);
+
+		assertEquals(ExecutionStatus.RUNTIME_ERROR, error.getCategory());
+		assertEquals("StackOverflowError", error.getException());
+		assertTrue(error.getHint().contains("base case"));
+		// The truncation is a footnote on the crash, never a replacement for it.
+		assertTrue(error.getMessage().contains("cut off"), error.getMessage());
+	}
+
+	@Test
 	void outputThatDiffersOnlyInCaseIsFlaggedAsSuch() {
 		CodeErrorInfo error = classifier.wrongAnswer("YES", "yes");
 

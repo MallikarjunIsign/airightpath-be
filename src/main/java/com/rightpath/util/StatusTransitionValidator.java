@@ -17,8 +17,13 @@ public class StatusTransitionValidator {
         Map.entry(ApplicationStatus.ACKNOWLEDGED,          Set.of(ApplicationStatus.ACKNOWLEDGED_BACK)),
         Map.entry(ApplicationStatus.ACKNOWLEDGED_BACK,     Set.of(ApplicationStatus.RECONFIRMED, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.RECONFIRMED,           Set.of(ApplicationStatus.EXAM_SENT, ApplicationStatus.REJECTED)),
-        Map.entry(ApplicationStatus.EXAM_SENT,             Set.of(ApplicationStatus.EXAM_COMPLETED)),
-        Map.entry(ApplicationStatus.EXAM_COMPLETED,        Set.of(ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED)),
+        // EXAM_SENT -> EXAM_SENT, and EXAM_COMPLETED -> EXAM_SENT: an exam round
+        // is not always a single assignment. A job may set aptitude first and add
+        // the coding paper once it has been sat, and each assignment re-runs this
+        // transition. Without these two the second assignment threw, so the
+        // coding exam was never created and never reached the candidate.
+        Map.entry(ApplicationStatus.EXAM_SENT,             Set.of(ApplicationStatus.EXAM_COMPLETED, ApplicationStatus.EXAM_SENT)),
+        Map.entry(ApplicationStatus.EXAM_COMPLETED,        Set.of(ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.EXAM_SENT)),
         Map.entry(ApplicationStatus.INTERVIEW_SCHEDULED,   Set.of(ApplicationStatus.INTERVIEW_COMPLETED)),
         Map.entry(ApplicationStatus.INTERVIEW_COMPLETED,   Set.of(ApplicationStatus.SELECTED, ApplicationStatus.REJECTED))
     );

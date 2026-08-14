@@ -91,6 +91,23 @@ public class ErrorClassifier {
      * @return the failure, categorised
      */
     public CodeErrorInfo runtimeError(String output, Language language, int exitCode) {
+        return runtimeError(output, language, exitCode, false, 0);
+    }
+
+    /**
+     * Classifies a crash whose output may have been cut off at the capture limit.
+     *
+     * <p>A crash that follows a lot of printing — or one whose own trace is long,
+     * as a blown stack's is — hits the capture cap on its way out. The crash is
+     * still the failure; the truncation is a footnote saying why the trace stops
+     * where it does, so nobody reads a half trace as the whole story.</p>
+     *
+     * @param truncated whether output was cut off at {@code maxBytes}
+     * @param maxBytes  the capture limit, only meaningful when truncated
+     */
+    public CodeErrorInfo runtimeError(String output, Language language, int exitCode, boolean truncated,
+            int maxBytes) {
+
         CodeErrorInfo error = new CodeErrorInfo();
         error.setCategory(ExecutionStatus.RUNTIME_ERROR);
         error.setType("RuntimeError");
@@ -107,6 +124,10 @@ public class ErrorClassifier {
         }
         if (error.getHint() == null && error.getException() != null) {
             error.setHint(HINTS.get(error.getException()));
+        }
+        if (truncated) {
+            error.setMessage(error.getMessage() + " (The program printed more than " + maxBytes
+                    + " bytes before this, so the middle of the output below was cut off.)");
         }
         return error;
     }
@@ -311,10 +332,34 @@ public class ErrorClassifier {
 
     /** A single run outran its deadline — in practice, a loop that never ends. */
     public CodeErrorInfo runTimeout(int seconds) {
+        return runTimeout(seconds, false, 0);
+    }
+
+    /**
+     * A single run outran its deadline, possibly while flooding its output.
+     *
+     * <p>A loop that spins and a loop that spins <em>printing</em> are different
+     * mistakes to look for, and the second one is the common one: the candidate
+     * can see their program producing output and assume it is working. Naming the
+     * printing also explains why the captured output stops mid-line.</p>
+     *
+     * @param floodedOutput whether the run also filled the capture limit
+     * @param maxBytes      that limit, only meaningful when it was filled
+     */
+    public CodeErrorInfo runTimeout(int seconds, boolean floodedOutput, int maxBytes) {
         CodeErrorInfo error = new CodeErrorInfo();
         error.setCategory(ExecutionStatus.TIMEOUT);
         error.setType("TimeLimitExceeded");
         error.setException("TimeLimitExceeded");
+
+        if (floodedOutput) {
+            error.setMessage("The program was still running after " + seconds + " seconds, and had already printed"
+                    + " more than " + maxBytes + " bytes, so it was stopped.");
+            error.setHint("A loop is printing without ever ending. Check that its condition can become false —"
+                    + " a counter moving away from its limit (i-- against i <= 1, for instance) never stops.");
+            return error;
+        }
+
         error.setMessage("The program did not finish within " + seconds + " seconds and was stopped.");
         error.setHint(
                 "Check for a loop whose condition never becomes false, or an approach too slow for the input size.");
