@@ -35,6 +35,12 @@ public class Users {
 	 * email format and constraints.
 	 */
 	@Id
+	// Width is pinned, not inferred. Hibernate's bean-validation integration would
+	// otherwise size this column from @Size(max = 254) and try to narrow the
+	// existing varchar(255) on every startup — an ALTER MySQL refuses outright,
+	// because seven tables carry a foreign key onto this column. @Size still caps
+	// what is accepted at 254; only the stored width differs.
+	@Column(length = 255)
 	@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", message = "Email must be a valid email address")
 	@Size(min = 6, max = 254, message = "Email must be between 6 and 254 characters")
 	@NotBlank(message = "Email is mandatory")
