@@ -59,13 +59,6 @@ public class CodeExecutionEngine {
 
     private static final String JAVA_DEFAULT_CLASS = "Main";
 
-    /**
-     * Ceiling on the end-of-output window kept alongside the start. A crash trace
-     * is a few kilobytes; past that the tail is just more of the flood that caused
-     * the truncation.
-     */
-    private static final int MAX_TAIL_BYTES = 8192;
-
     /** How long the compile step may take before it is treated as a failure. */
     @Value("${compiler.compile-timeout-seconds:20}")
     private int compileTimeoutSeconds;
@@ -298,15 +291,6 @@ public class CodeExecutionEngine {
 
         } catch (IOException e) {
             throw new CompilerToolchainException("Java compiler could not be initialised.", e);
-        } catch (StackOverflowError e) {
-            // The in-process compiler parses candidate source on the request thread,
-            // and its parser recurses: deeply nested expressions blow its stack. The
-            // stack has fully unwound by the time we get here, and this is the
-            // candidate's code failing to compile — not the platform failing — so it
-            // must not escape as a 500.
-            logger.warn("javac overflowed its stack compiling a submission ({} chars)", sourceName.length());
-            return errorClassifier.compileError(
-                    "error: the expression is nested too deeply for the compiler to parse.", Language.JAVA);
         }
     }
 
@@ -372,22 +356,17 @@ public class CodeExecutionEngine {
         ProcessRun run = runProcess(runCommand, testCase.input(), runTimeoutSeconds, workDir);
         String output = sanitize(run.output(), workDir, sourceName);
 
-        // Order matters, and this is the order of severity. A run that never ended
-        // and a run that crashed both say more about what to fix than the output cap
-        // does — and both of them also fill the cap on the way, so checking
-        // truncation first buried the real fault under "you printed too much".
         if (run.timedOut()) {
             return new CaseOutcome(testCase, ExecutionStatus.TIMEOUT, output,
-                    errorClassifier.runTimeout(runTimeoutSeconds, run.truncated(), maxOutputBytes), run.durationMs());
-        }
-        if (run.exitCode() != 0) {
-            return new CaseOutcome(testCase, ExecutionStatus.RUNTIME_ERROR, output,
-                    errorClassifier.runtimeError(output, spec, run.exitCode(), run.truncated(), maxOutputBytes),
-                    run.durationMs());
+                    errorClassifier.runTimeout(runTimeoutSeconds), run.durationMs());
         }
         if (run.truncated()) {
             return new CaseOutcome(testCase, ExecutionStatus.OUTPUT_LIMIT_EXCEEDED, output,
                     errorClassifier.outputLimit(maxOutputBytes), run.durationMs());
+        }
+        if (run.exitCode() != 0) {
+            return new CaseOutcome(testCase, ExecutionStatus.RUNTIME_ERROR, output,
+                    errorClassifier.runtimeError(output, spec, run.exitCode()), run.durationMs());
         }
 
         String actual = output.trim();
@@ -501,108 +480,28 @@ public class CodeExecutionEngine {
         }
     }
 
-    /**
-     * Drains the process output, keeping both ends of it.
-     *
-     * <p>Keeping only the first N bytes threw away the one part that explains a
-     * failure: a crash prints its trace <em>last</em>, so a program that printed
-     * its way past the cap and then died arrived here as pages of its own output
-     * and no evidence of the crash at all. The head is what the candidate meant to
-     * print, the tail is how it ended, and the middle is what nobody needs.</p>
-     *
-     * <p>The two windows share the configured budget, so this still captures no
-     * more than the cap however much the program prints.</p>
-     */
     private CapturedOutput readCapped(InputStream stream) {
-        int tailBudget = Math.min(maxOutputBytes / 4, MAX_TAIL_BYTES);
-        int headBudget = maxOutputBytes - tailBudget;
-
-        ByteArrayOutputStream head = new ByteArrayOutputStream();
-        TailWindow tail = new TailWindow(tailBudget);
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         boolean truncated = false;
         byte[] chunk = new byte[8192];
-
         try (InputStream in = stream) {
             int read;
             while ((read = in.read(chunk)) != -1) {
-                int room = headBudget - head.size();
-                int toHead = Math.max(0, Math.min(read, room));
-                if (toHead > 0) {
-                    head.write(chunk, 0, toHead);
+                int room = maxOutputBytes - buffer.size();
+                if (room > 0) {
+                    buffer.write(chunk, 0, Math.min(read, room));
                 }
-                if (read > toHead) {
+                if (read > room) {
                     // Keep draining past the cap: stop reading and the child blocks
                     // on a full pipe instead of finishing.
                     truncated = true;
-                    tail.write(chunk, toHead, read - toHead);
                 }
             }
         } catch (IOException e) {
             // Killing the process closes the stream mid-read; keep what was captured.
             logger.trace("output stream closed: {}", e.getMessage());
         }
-
-        String text = head.toString(StandardCharsets.UTF_8);
-        if (truncated) {
-            String ending = tail.text();
-            if (!ending.isEmpty()) {
-                text = text + "\n... [output truncated] ...\n" + ending;
-            }
-        }
-        return new CapturedOutput(text, truncated);
-    }
-
-    /**
-     * The last {@code capacity} bytes written to it, and nothing else.
-     *
-     * <p>A circular buffer rather than a growing one: the whole point is to follow
-     * a program that prints without bound while holding a fixed amount of it.</p>
-     */
-    private static final class TailWindow {
-
-        private final byte[] buffer;
-        private int position;
-        private boolean wrapped;
-
-        TailWindow(int capacity) {
-            this.buffer = new byte[Math.max(0, capacity)];
-        }
-
-        void write(byte[] source, int offset, int length) {
-            if (buffer.length == 0 || length <= 0) {
-                return;
-            }
-            // Only the final `capacity` bytes can survive, so skip anything older.
-            int start = offset + Math.max(0, length - buffer.length);
-            for (int i = start; i < offset + length; i++) {
-                buffer[position] = source[i];
-                position = (position + 1) % buffer.length;
-                if (position == 0) {
-                    wrapped = true;
-                }
-            }
-        }
-
-        /**
-         * The retained bytes in order, from the first line boundary — the window
-         * opens mid-line, and half a line of a candidate's output reads as
-         * corruption rather than as a cut.
-         */
-        String text() {
-            if (buffer.length == 0 || (!wrapped && position == 0)) {
-                return "";
-            }
-            byte[] ordered = new byte[wrapped ? buffer.length : position];
-            if (wrapped) {
-                System.arraycopy(buffer, position, ordered, 0, buffer.length - position);
-                System.arraycopy(buffer, 0, ordered, buffer.length - position, position);
-            } else {
-                System.arraycopy(buffer, 0, ordered, 0, position);
-            }
-            String text = new String(ordered, StandardCharsets.UTF_8);
-            int firstBreak = text.indexOf('\n');
-            return firstBreak >= 0 && firstBreak < text.length() - 1 ? text.substring(firstBreak + 1) : text;
-        }
+        return new CapturedOutput(buffer.toString(StandardCharsets.UTF_8), truncated);
     }
 
     /** Keeps server paths and temp names out of anything a candidate reads. */
