@@ -73,11 +73,16 @@ public interface AssessmentService {
      * @param score The score obtained by the candidate.
      * @param jsonData The JSON-formatted breakdown or explanation of the score.
      * @param jobPrefix The prefix representing the job category.
+     * @param assessmentId The assessment actually sat, or {@code null} to resolve it
+     *        from the candidate's unattended assessments for this job. Pass it whenever
+     *        it is known: a re-assigned exam leaves several rows of the same type, and
+     *        only the id says which of them this result belongs to.
      * @return A message indicating result recording status.
-     * 
+     *
      * Developer Note: Log candidateEmail, assessmentType, score, and jobPrefix.
      */
-    String resultAssessment(String candidateEmail, String assessmentType, Double score, String jsonData, String jobPrefix);
+    String resultAssessment(String candidateEmail, String assessmentType, Double score, String jsonData,
+            String jobPrefix, Long assessmentId);
 
     /**
      * Fetches the details of a specific assessment by its ID.

@@ -140,6 +140,26 @@ public interface AssessmentRepository extends JpaRepository<Assessment, Long> {
     long countByCandidateEmailAndJobPrefixAndExamAttendedFalse(String candidateEmail, String jobPrefix);
 
     /**
+     * The oldest assessment of a type that the candidate has not yet sat.
+     *
+     * <p>Used when a result arrives without an assessment id (an older client).
+     * Resolving to an <em>unattended</em> row is the part that matters: a
+     * re-assigned exam leaves two rows of the same type, and picking the first
+     * of them regardless of attendance re-flagged an attempt already sat while
+     * leaving the new one pending forever.</p>
+     *
+     * @param candidateEmail the candidate's email
+     * @param jobPrefix      the job identifier prefix
+     * @param assessmentType the type being submitted
+     * @return the earliest still-unattended assessment, if any
+     */
+    Optional<Assessment> findTopByCandidateEmailAndJobPrefixAndAssessmentTypeAndExamAttendedFalseOrderByAssignedAtAsc(
+            String candidateEmail,
+            String jobPrefix,
+            AssessmentType assessmentType
+    );
+
+    /**
      * Whether any assessment has been assigned to a candidate for a given job.
      * Used to guard the send-exam-link flow so a candidate is never marked
      * EXAM_SENT without an actual exam to take.

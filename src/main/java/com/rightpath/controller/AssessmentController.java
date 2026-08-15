@@ -262,6 +262,9 @@ public class AssessmentController {
 	 * @param candidateEmail Candidate's email
 	 * @param assessmentType Type of assessment
 	 * @param score          Score obtained
+	 * @param assessmentId   The assessment sat, when the exam page knows it. Optional
+	 *                       so older clients keep working, but without it a re-sent
+	 *                       exam cannot be told apart from its earlier attempt.
 	 * @return ResponseEntity with status and message
 	 */
 	@PostMapping("/result")
@@ -271,9 +274,11 @@ public class AssessmentController {
 	    @RequestParam String assessmentType,
 	    @RequestParam Double score,
 	    @RequestBody String resultsJson,
-	    @RequestParam String jobPrefix // ✅ FIXED: Accept jobPrefix
+	    @RequestParam String jobPrefix,
+	    @RequestParam(required = false) Long assessmentId
 	) {
-	    String message = assessmentService.resultAssessment(candidateEmail, assessmentType, score, resultsJson, jobPrefix);
+	    String message = assessmentService.resultAssessment(candidateEmail, assessmentType, score, resultsJson,
+	            jobPrefix, assessmentId);
 
 	    Map<String, Object> response = new HashMap<>();
 	    response.put("message", message);

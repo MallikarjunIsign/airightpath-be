@@ -150,48 +150,92 @@ public class AssessmentServiceImpl implements AssessmentService {
 	 */
 	@Override
 	public String resultAssessment(String candidateEmail, String assessmentType, Double score, String jsonData,
-			String jobPrefix) {
-		logger.info("Recording result for candidate: {}, type: {}, jobPrefix: {}", candidateEmail, assessmentType,
-				jobPrefix);
+			String jobPrefix, Long assessmentId) {
+		logger.info("Recording result for candidate: {}, type: {}, jobPrefix: {}, assessmentId: {}", candidateEmail,
+				assessmentType, jobPrefix, assessmentId);
 
-		List<Assessment> assessments = assessmentRepository.findByCandidateEmail(candidateEmail);
-		assessments.stream().filter(a -> a.getAssessmentType().name().equalsIgnoreCase(assessmentType)).findFirst()
-				.ifPresent(assessment -> {
-					assessment.setExamAttended(true);
-					assessmentRepository.save(assessment);
-					logger.info("Marked assessment as attended for candidate: {}", candidateEmail);
+		AssessmentType type = AssessmentType.valueOf(assessmentType);
+		Assessment attempt = resolveSubmittedAttempt(candidateEmail, jobPrefix, type, assessmentId);
 
-					// Check if all assessments for this candidate+job are completed
-					if (jobPrefix != null) {
-						long pending = assessmentRepository.countByCandidateEmailAndJobPrefixAndExamAttendedFalse(
-								candidateEmail, jobPrefix);
-						if (pending == 0) {
-							List<JobApplicationForCandidate> apps = jobApplicationRepository
-									.findByJobPrefixAndEmail(jobPrefix, candidateEmail);
-							for (JobApplicationForCandidate app : apps) {
-								if (app.getStatus() == ApplicationStatus.EXAM_SENT) {
-									StatusTransitionValidator.validate(app.getStatus(), ApplicationStatus.EXAM_COMPLETED);
-									app.setStatus(ApplicationStatus.EXAM_COMPLETED);
-									jobApplicationRepository.save(app);
-								}
-							}
+		if (attempt != null) {
+			attempt.setExamAttended(true);
+			assessmentRepository.save(attempt);
+			logger.info("Marked assessment {} as attended for candidate: {}", attempt.getId(), candidateEmail);
+
+			// Check if all assessments for this candidate+job are completed
+			if (jobPrefix != null) {
+				long pending = assessmentRepository.countByCandidateEmailAndJobPrefixAndExamAttendedFalse(
+						candidateEmail, jobPrefix);
+				if (pending == 0) {
+					List<JobApplicationForCandidate> apps = jobApplicationRepository
+							.findByJobPrefixAndEmail(jobPrefix, candidateEmail);
+					for (JobApplicationForCandidate app : apps) {
+						if (app.getStatus() == ApplicationStatus.EXAM_SENT) {
+							StatusTransitionValidator.validate(app.getStatus(), ApplicationStatus.EXAM_COMPLETED);
+							app.setStatus(ApplicationStatus.EXAM_COMPLETED);
+							jobApplicationRepository.save(app);
 						}
 					}
-				});
+				}
+			}
+		} else {
+			logger.warn("No unattended {} assessment found for {} on job {} — result stored unlinked.",
+					assessmentType, candidateEmail, jobPrefix);
+		}
 
 		Result result = new Result();
 		result.setCandidateEmail(candidateEmail);
-		result.setAssessmentType(AssessmentType.valueOf(assessmentType));
+		result.setAssessmentType(type);
 		result.setScore(score);
-		result.setStatus(score >= 50 ? ResultStatus.PASSED : ResultStatus.FAILED);
+		result.setStatus(score != null && score >= 50 ? ResultStatus.PASSED : ResultStatus.FAILED);
 		result.setSubmittedAt(LocalDateTime.now());
 		result.setResultsJson(jsonData);
 		result.setJobPrefix(jobPrefix);
+		// Without this the assessment_id column stayed null on every row, so a
+		// result could not be traced back to the attempt that produced it — which
+		// is the whole difference between two attempts of a re-sent exam.
+		result.setAssessment(attempt);
 
 		resultRepository.save(result);
 
 		logger.info("Assessment result saved successfully for candidate: {}", candidateEmail);
 		return "Assessment submitted successfully.";
+	}
+
+	/**
+	 * Works out which assessment row a submission belongs to.
+	 *
+	 * <p>The id sent by the exam page is authoritative — it is the paper the
+	 * candidate actually had open. The lookup is only a fallback for clients that
+	 * do not send one, and it deliberately considers unattended rows for this job
+	 * alone: the previous code scanned every assessment ever assigned to the
+	 * email, across all jobs, and took the first of a matching type.</p>
+	 *
+	 * @return the attempt being submitted, or {@code null} if none can be resolved
+	 */
+	private Assessment resolveSubmittedAttempt(String candidateEmail, String jobPrefix, AssessmentType type,
+			Long assessmentId) {
+		if (assessmentId != null) {
+			Assessment byId = assessmentRepository.findById(assessmentId).orElse(null);
+			// Guard the id: a mismatched owner or type means the caller is wrong
+			// about which attempt this is, and silently trusting it would attach
+			// the result to another candidate's paper.
+			if (byId != null && candidateEmail.equalsIgnoreCase(byId.getCandidateEmail())
+					&& byId.getAssessmentType() == type) {
+				return byId;
+			}
+			logger.warn("Assessment id {} does not match candidate {} and type {} — falling back to lookup.",
+					assessmentId, candidateEmail, type);
+		}
+
+		if (jobPrefix == null) {
+			return null;
+		}
+
+		return assessmentRepository
+				.findTopByCandidateEmailAndJobPrefixAndAssessmentTypeAndExamAttendedFalseOrderByAssignedAtAsc(
+						candidateEmail, jobPrefix, type)
+				.orElse(null);
 	}
 
 	/**
