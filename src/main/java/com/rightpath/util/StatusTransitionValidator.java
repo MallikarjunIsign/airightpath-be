@@ -11,10 +11,18 @@ import com.rightpath.enums.ApplicationStatus;
  */
 public class StatusTransitionValidator {
 
+    /**
+     * Forward moves are strictly linear, but REJECTED is reachable from every
+     * live stage. A candidate can leave the running at any point — they stop
+     * replying after the ack, no-show the exam, cancel the interview — and the
+     * pipeline previously only allowed rejection out of half the stages. That
+     * forced a recruiter to push someone forward into a stage they had already
+     * dropped out of, purely to gain the right to reject them there.
+     */
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED_TRANSITIONS = Map.ofEntries(
         Map.entry(ApplicationStatus.APPLIED,               Set.of(ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.SHORTLISTED,           Set.of(ApplicationStatus.ACKNOWLEDGED, ApplicationStatus.REJECTED)),
-        Map.entry(ApplicationStatus.ACKNOWLEDGED,          Set.of(ApplicationStatus.ACKNOWLEDGED_BACK)),
+        Map.entry(ApplicationStatus.ACKNOWLEDGED,          Set.of(ApplicationStatus.ACKNOWLEDGED_BACK, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.ACKNOWLEDGED_BACK,     Set.of(ApplicationStatus.RECONFIRMED, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.RECONFIRMED,           Set.of(ApplicationStatus.EXAM_SENT, ApplicationStatus.REJECTED)),
         // EXAM_SENT -> EXAM_SENT, and EXAM_COMPLETED -> EXAM_SENT: an exam round
@@ -22,10 +30,14 @@ public class StatusTransitionValidator {
         // the coding paper once it has been sat, and each assignment re-runs this
         // transition. Without these two the second assignment threw, so the
         // coding exam was never created and never reached the candidate.
-        Map.entry(ApplicationStatus.EXAM_SENT,             Set.of(ApplicationStatus.EXAM_COMPLETED, ApplicationStatus.EXAM_SENT)),
+        Map.entry(ApplicationStatus.EXAM_SENT,             Set.of(ApplicationStatus.EXAM_COMPLETED, ApplicationStatus.EXAM_SENT, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.EXAM_COMPLETED,        Set.of(ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.EXAM_SENT)),
-        Map.entry(ApplicationStatus.INTERVIEW_SCHEDULED,   Set.of(ApplicationStatus.INTERVIEW_COMPLETED)),
-        Map.entry(ApplicationStatus.INTERVIEW_COMPLETED,   Set.of(ApplicationStatus.SELECTED, ApplicationStatus.REJECTED))
+        Map.entry(ApplicationStatus.INTERVIEW_SCHEDULED,   Set.of(ApplicationStatus.INTERVIEW_COMPLETED, ApplicationStatus.REJECTED)),
+        Map.entry(ApplicationStatus.INTERVIEW_COMPLETED,   Set.of(ApplicationStatus.SELECTED, ApplicationStatus.REJECTED)),
+        // A selected candidate who declines, or whose offer is withdrawn, still
+        // has to land somewhere. Rejection is the only move out of SELECTED —
+        // it stays terminal for every forward step.
+        Map.entry(ApplicationStatus.SELECTED,              Set.of(ApplicationStatus.REJECTED))
     );
 
     /**
@@ -44,8 +56,10 @@ public class StatusTransitionValidator {
             throw new IllegalStateException("Cannot transition from REJECTED. The application has been closed.");
         }
 
-        if (currentStatus == ApplicationStatus.SELECTED) {
-            throw new IllegalStateException("Cannot transition from SELECTED. The application is already finalized.");
+        if (currentStatus == ApplicationStatus.SELECTED && targetStatus != ApplicationStatus.REJECTED) {
+            throw new IllegalStateException(
+                "Cannot transition from SELECTED to " + targetStatus + ". The application is already finalized; "
+                + "only rejection (a declined or withdrawn offer) may move it.");
         }
 
         Set<ApplicationStatus> allowed = ALLOWED_TRANSITIONS.get(currentStatus);
