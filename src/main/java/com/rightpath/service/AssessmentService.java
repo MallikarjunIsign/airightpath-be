@@ -77,12 +77,17 @@ public interface AssessmentService {
      *        from the candidate's unattended assessments for this job. Pass it whenever
      *        it is known: a re-assigned exam leaves several rows of the same type, and
      *        only the id says which of them this result belongs to.
+     * @param percentage The attempt as 0-100, as worked out by the exam page. This
+     *        is what the paper's pass mark is compared against; {@code score} is
+     *        raw marks and grading off it directly fails an 85% paper.
+     * @param totalMarks What the paper was out of, so a percentage can still be
+     *        derived when the client sends only marks.
      * @return A message indicating result recording status.
      *
      * Developer Note: Log candidateEmail, assessmentType, score, and jobPrefix.
      */
     String resultAssessment(String candidateEmail, String assessmentType, Double score, String jsonData,
-            String jobPrefix, Long assessmentId);
+            String jobPrefix, Long assessmentId, Double percentage, Double totalMarks);
 
     /**
      * Fetches the details of a specific assessment by its ID.

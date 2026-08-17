@@ -150,7 +150,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 	 */
 	@Override
 	public String resultAssessment(String candidateEmail, String assessmentType, Double score, String jsonData,
-			String jobPrefix, Long assessmentId) {
+			String jobPrefix, Long assessmentId, Double percentage, Double totalMarks) {
 		logger.info("Recording result for candidate: {}, type: {}, jobPrefix: {}, assessmentId: {}", candidateEmail,
 				assessmentType, jobPrefix, assessmentId);
 
@@ -187,7 +187,9 @@ public class AssessmentServiceImpl implements AssessmentService {
 		result.setCandidateEmail(candidateEmail);
 		result.setAssessmentType(type);
 		result.setScore(score);
-		result.setStatus(score != null && score >= 50 ? ResultStatus.PASSED : ResultStatus.FAILED);
+		result.setTotalMarks(totalMarks);
+		result.setPercentage(resolvePercentage(percentage, score, totalMarks));
+		result.setStatus(gradeAgainstPassMark(result.getPercentage(), attempt));
 		result.setSubmittedAt(LocalDateTime.now());
 		result.setResultsJson(jsonData);
 		result.setJobPrefix(jobPrefix);
@@ -200,6 +202,53 @@ public class AssessmentServiceImpl implements AssessmentService {
 
 		logger.info("Assessment result saved successfully for candidate: {}", candidateEmail);
 		return "Assessment submitted successfully.";
+	}
+
+	/**
+	 * The pass mark to store, clamped to a sane 1-100 and defaulted when absent.
+	 *
+	 * Zero is rejected along with the negatives: a paper nobody can fail is far
+	 * more likely a blank field or a bad parse than a deliberate choice.
+	 */
+	private Integer passMarkOrDefault(Integer requested) {
+		if (requested == null || requested <= 0 || requested > 100) {
+			return Assessment.DEFAULT_PASS_PERCENTAGE;
+		}
+		return requested;
+	}
+
+	/**
+	 * The attempt as a percentage, preferring the figure the exam page worked out.
+	 *
+	 * The exam knows the paper it just marked, so its percentage is authoritative.
+	 * Falling back to marks over total covers clients that send only those. When
+	 * neither is available the result stores no percentage rather than a guess —
+	 * treating raw marks as a percentage is precisely the bug this replaces, where
+	 * 17 marks out of 20 was compared against a pass mark of 50 and failed.
+	 */
+	private Double resolvePercentage(Double percentage, Double score, Double totalMarks) {
+		if (percentage != null && !percentage.isNaN()) {
+			return Math.min(100d, Math.max(0d, percentage));
+		}
+		if (score != null && totalMarks != null && totalMarks > 0) {
+			return Math.min(100d, Math.max(0d, (score / totalMarks) * 100d));
+		}
+		return null;
+	}
+
+	/**
+	 * PASSED when the attempt reaches the pass mark configured for that paper.
+	 *
+	 * An unknown percentage cannot be graded, and calling it FAILED would brand a
+	 * candidate on missing data — so it is recorded as FAILED only when there is a
+	 * percentage to justify it, and left null otherwise for the reviewer to judge.
+	 */
+	private ResultStatus gradeAgainstPassMark(Double percentage, Assessment attempt) {
+		if (percentage == null) {
+			return null;
+		}
+		int passMark = attempt == null ? Assessment.DEFAULT_PASS_PERCENTAGE : attempt.effectivePassPercentage();
+		return percentage >= passMark ? ResultStatus.PASSED : ResultStatus.FAILED;
 	}
 
 	/**
@@ -359,6 +408,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 				aptitudeAssessment.setMinutesPerQuestion(dto.getAptitudeMinutesPerQuestion());
 				aptitudeAssessment.setQuestionCount(dto.getAptitudeQuestionCount());
 				aptitudeAssessment.setEstimatedDurationMinutes(dto.getAptitudeEstimatedDurationMinutes());
+				aptitudeAssessment.setPassPercentage(passMarkOrDefault(dto.getAptitudePassPercentage()));
 
 				if (dto.getAptitudeAnswerKey() != null) {
 					try {
@@ -389,6 +439,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 				codingAssessment.setMinutesPerQuestion(dto.getCodingMinutesPerQuestion());
 				codingAssessment.setQuestionCount(dto.getCodingQuestionCount());
 				codingAssessment.setEstimatedDurationMinutes(dto.getCodingEstimatedDurationMinutes());
+				codingAssessment.setPassPercentage(passMarkOrDefault(dto.getCodingPassPercentage()));
 				assessmentRepository.save(codingAssessment);
 			}
 

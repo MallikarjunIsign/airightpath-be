@@ -40,4 +40,12 @@ public class AssignAssessmentDto {
     private Integer codingMinutesPerQuestion;
     private Integer codingQuestionCount;
     private Integer codingEstimatedDurationMinutes;
+
+    /**
+     * The percentage each paper must reach to pass. Null falls back to
+     * {@link com.rightpath.entity.Assessment#DEFAULT_PASS_PERCENTAGE}, which is
+     * what an older client that does not send these will get.
+     */
+    private Integer aptitudePassPercentage;
+    private Integer codingPassPercentage;
 }

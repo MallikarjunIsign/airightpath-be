@@ -275,10 +275,12 @@ public class AssessmentController {
 	    @RequestParam Double score,
 	    @RequestBody String resultsJson,
 	    @RequestParam String jobPrefix,
-	    @RequestParam(required = false) Long assessmentId
+	    @RequestParam(required = false) Long assessmentId,
+	    @RequestParam(required = false) Double percentage,
+	    @RequestParam(required = false) Double totalMarks
 	) {
 	    String message = assessmentService.resultAssessment(candidateEmail, assessmentType, score, resultsJson,
-	            jobPrefix, assessmentId);
+	            jobPrefix, assessmentId, percentage, totalMarks);
 
 	    Map<String, Object> response = new HashMap<>();
 	    response.put("message", message);

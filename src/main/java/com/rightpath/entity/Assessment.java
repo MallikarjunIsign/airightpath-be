@@ -128,4 +128,23 @@ public class Assessment {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer estimatedDurationMinutes;
 
+    /**
+     * The mark, as a percentage, this paper must reach to pass.
+     *
+     * Held per assessment rather than per job so aptitude and coding can be
+     * graded to different standards, and so changing the bar for a later round
+     * cannot silently re-grade papers already sat. Defaults to
+     * {@link #DEFAULT_PASS_PERCENTAGE}; rows written before this column existed
+     * read as null and are treated as the default.
+     */
+    @Column(name = "pass_percentage")
+    private Integer passPercentage = DEFAULT_PASS_PERCENTAGE;
+
+    /** The bar applied when an assignment does not name one. */
+    public static final int DEFAULT_PASS_PERCENTAGE = 60;
+
+    /** Never null, so callers grading a result do not each repeat the fallback. */
+    public int effectivePassPercentage() {
+        return passPercentage == null ? DEFAULT_PASS_PERCENTAGE : passPercentage;
+    }
 }
