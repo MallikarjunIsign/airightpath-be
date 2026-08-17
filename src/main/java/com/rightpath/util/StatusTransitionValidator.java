@@ -21,7 +21,12 @@ public class StatusTransitionValidator {
      */
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED_TRANSITIONS = Map.ofEntries(
         Map.entry(ApplicationStatus.APPLIED,               Set.of(ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED)),
-        Map.entry(ApplicationStatus.SHORTLISTED,           Set.of(ApplicationStatus.ACKNOWLEDGED, ApplicationStatus.REJECTED)),
+        // SHORTLISTED -> EXAM_SENT is the direct-assignment path: a recruiter who
+        // already knows they want a candidate examined sends the paper straight
+        // out of Applied, and the assignment shortlists them on the way through.
+        // The ack / reconfirm round-trip stays available, it is just no longer
+        // the only way to reach an exam.
+        Map.entry(ApplicationStatus.SHORTLISTED,           Set.of(ApplicationStatus.ACKNOWLEDGED, ApplicationStatus.EXAM_SENT, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.ACKNOWLEDGED,          Set.of(ApplicationStatus.ACKNOWLEDGED_BACK, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.ACKNOWLEDGED_BACK,     Set.of(ApplicationStatus.RECONFIRMED, ApplicationStatus.REJECTED)),
         Map.entry(ApplicationStatus.RECONFIRMED,           Set.of(ApplicationStatus.EXAM_SENT, ApplicationStatus.REJECTED)),

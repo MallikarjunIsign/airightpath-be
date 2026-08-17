@@ -441,11 +441,32 @@ public class AssessmentServiceImpl implements AssessmentService {
 		List<JobApplicationForCandidate> applications = jobApplicationRepository.findByJobPrefixAndEmail(jobPrefix,
 				email);
 		for (JobApplicationForCandidate application : applications) {
-			StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.EXAM_SENT);
-			application.setStatus(ApplicationStatus.EXAM_SENT);
-			application.setExamLinkStatus("Exam Link Sent");
-			jobApplicationRepository.save(application);
+			advanceToExamSent(application, jobPrefix, email);
 		}
+	}
+
+	/**
+	 * Moves an application to EXAM_SENT, shortlisting it first when the exam is
+	 * being sent straight out of APPLIED.
+	 *
+	 * <p>Assigning an exam to an applicant is itself the decision to shortlist
+	 * them, so the recruiter should not have to record that separately. The step
+	 * is taken explicitly rather than by allowing APPLIED to jump the queue: the
+	 * candidate genuinely passes through SHORTLISTED, the shortlist column says
+	 * how they got there, and the pipeline counts stay honest.</p>
+	 */
+	private void advanceToExamSent(JobApplicationForCandidate application, String jobPrefix, String email) {
+		if (application.getStatus() == ApplicationStatus.APPLIED) {
+			StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.SHORTLISTED);
+			application.setStatus(ApplicationStatus.SHORTLISTED);
+			application.setShortlistStatus("Shortlisted (Direct Exam)");
+			logger.info("Direct exam assignment shortlisted {} on job {} on the way to EXAM_SENT", email, jobPrefix);
+		}
+
+		StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.EXAM_SENT);
+		application.setStatus(ApplicationStatus.EXAM_SENT);
+		application.setExamLinkStatus("Exam Link Sent");
+		jobApplicationRepository.save(application);
 	}
 
 	/**

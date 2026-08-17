@@ -53,6 +53,25 @@ class StatusTransitionValidatorTest {
 				() -> StatusTransitionValidator.validate(ApplicationStatus.SHORTLISTED, ApplicationStatus.RECONFIRMED));
 	}
 
+	/**
+	 * Direct assignment: an applicant is shortlisted and mailed the paper in one
+	 * action, so the pair of steps it takes has to be legal end to end.
+	 */
+	@Test
+	void applicantCanBeSentAnExamByWayOfShortlisting() {
+		assertDoesNotThrow(() -> {
+			StatusTransitionValidator.validate(ApplicationStatus.APPLIED, ApplicationStatus.SHORTLISTED);
+			StatusTransitionValidator.validate(ApplicationStatus.SHORTLISTED, ApplicationStatus.EXAM_SENT);
+		});
+	}
+
+	/** The shortlisting step is not optional — APPLIED may not jump to the exam. */
+	@Test
+	void applicantCannotSkipStraightToExamSent() {
+		assertThrows(IllegalStateException.class,
+				() -> StatusTransitionValidator.validate(ApplicationStatus.APPLIED, ApplicationStatus.EXAM_SENT));
+	}
+
 	/** A second paper in the same round re-runs the assignment transition. */
 	@Test
 	void examCanBeAssignedTwiceInOneRound() {
