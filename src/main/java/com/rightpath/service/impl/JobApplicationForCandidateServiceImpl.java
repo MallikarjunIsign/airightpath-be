@@ -761,12 +761,28 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
 	            return "Cannot acknowledge. Current status: " + application.getStatus();
 	        }
 
-	        // Validate workflow transition: ACKNOWLEDGED → ACKNOWLEDGED_BACK
+	        // The candidate confirming is the reconfirmation, so carry them all the
+	        // way to RECONFIRMED here rather than parking them at ACKNOWLEDGED_BACK.
+	        //
+	        // That stop was a dead end in practice: nothing moved an application on
+	        // from it, so a candidate who had replied sat there while the admin was
+	        // shown a stage with no forward action, and the exam could not be
+	        // assigned because assignment starts at RECONFIRMED. Both steps are
+	        // still taken in order, so the audit columns record what happened.
 	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.ACKNOWLEDGED_BACK);
 	        application.setStatus(ApplicationStatus.ACKNOWLEDGED_BACK);
 	        application.setAcknowledgedStatus("Acknowledged Back");
+
+	        StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.RECONFIRMED);
+	        application.setStatus(ApplicationStatus.RECONFIRMED);
+	        // Not "Re-confirmation Mail Sent": no reconfirmation mail goes out on
+	        // this path. The candidate is already being sent the acknowledgement
+	        // confirmation below, and a second mail saying the same thing is noise.
+	        application.setReconfirmationStatus("Reconfirmed on candidate acknowledgement");
 	        applicationForCandidateRepository.save(application);
-	        
+
+	        logger.info("Candidate {} acknowledged on job {}: ACKNOWLEDGED -> RECONFIRMED", email, jobPrefix);
+
 	        // Prepare params for universal email
 	        Map<String, Object> emailParams = new HashMap<>();
 	        emailParams.put("recipientEmail", email);
