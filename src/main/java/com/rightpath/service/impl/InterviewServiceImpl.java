@@ -24,6 +24,7 @@ import com.rightpath.entity.InterviewSession;
 import com.rightpath.entity.JobApplicationForCandidate;
 import com.rightpath.enums.ApplicationStatus;
 import com.rightpath.enums.AttemptStatus;
+import com.rightpath.enums.EmailType;
 import com.rightpath.enums.InterviewResult;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
@@ -313,6 +314,9 @@ public class InterviewServiceImpl implements InterviewService {
 	    }
 
 	    List<CandidateInterviewSchedule> schedules = new ArrayList<>();
+	    // Kept so the invitation can address the candidate by name and quote the
+	    // role, instead of the bare job prefix they never see anywhere else.
+	    Map<String, JobApplicationForCandidate> applicationsByEmail = new HashMap<>();
 
 	    for (String email : emails) {
 	        JobApplicationForCandidate application = jobAppRepo
@@ -321,6 +325,7 @@ public class InterviewServiceImpl implements InterviewService {
 
 	        application.setInterview("Scheduled");
 	        jobAppRepo.save(application);
+	        applicationsByEmail.put(email, application);
 
 	        CandidateInterviewSchedule schedule = CandidateInterviewSchedule.builder()
 	                .jobPrefix(jobPrefix)
@@ -339,10 +344,26 @@ public class InterviewServiceImpl implements InterviewService {
 	    schedules = scheduleRepo.saveAll(schedules);
 
 	    if (sendEmail) {
-	        String subject = "Interview Scheduled - " + jobPrefix;
 	        for (CandidateInterviewSchedule s : schedules) {
-	            String body = "Your interview for job " + jobPrefix + " is scheduled. Deadline: " + deadlineTime;
-	            emailAsyncService.sendInterviewEmail(s.getEmail(), subject, body);
+	            JobApplicationForCandidate application = applicationsByEmail.get(s.getEmail());
+
+	            Map<String, Object> emailParams = new HashMap<>();
+	            emailParams.put("recipientEmail", s.getEmail());
+	            emailParams.put("jobPrefix", jobPrefix);
+	            // The template formats these for display; never hand it a pre-formatted
+	            // or ISO string.
+	            emailParams.put("startTime", assignedAt);
+	            emailParams.put("endTime", deadlineTime);
+	            if (application != null) {
+	                emailParams.put("firstName", application.getFirstName());
+	                emailParams.put("lastName", application.getLastName());
+	                emailParams.put("mobileNumber", application.getMobileNumber());
+	                if (application.getJobPost() != null) {
+	                    emailParams.put("jobTitle", application.getJobPost().getJobTitle());
+	                }
+	            }
+
+	            emailAsyncService.sendTemplatedEmail(EmailType.INTERVIEW_SCHEDULE, emailParams);
 	        }
 	    }
 

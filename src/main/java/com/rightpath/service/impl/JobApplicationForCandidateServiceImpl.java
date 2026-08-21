@@ -630,8 +630,15 @@ public void updateJobApplicationByJobPrefixAndEmail(JobApplicationForCandidateDT
         try {
             Map<String, Object> emailParams = new HashMap<>();
             emailParams.put("recipientEmail", email);
-            emailParams.put("fullName", application.getFirstName() + " " + application.getLastName());
+            emailParams.put("firstName", application.getFirstName());
+            emailParams.put("lastName", application.getLastName());
             emailParams.put("mobileNumber", application.getMobileNumber());
+            // Named so the candidate reads which role they were shortlisted for,
+            // rather than "the role you applied for".
+            emailParams.put("jobPrefix", jobPrefix);
+            if (application.getJobPost() != null) {
+                emailParams.put("jobTitle", application.getJobPost().getJobTitle());
+            }
             emailService.sendUniversalEmail(EmailType.SHORTLIST_NOTIFICATION, emailParams);
         } catch (Exception e) {
             logger.warn("Shortlist notification failed for {} (job {}): {}", email, jobPrefix, e.getMessage());
