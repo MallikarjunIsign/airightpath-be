@@ -316,12 +316,14 @@ public class AssessmentServiceImpl implements AssessmentService {
 			// Update job application status
 			List<JobApplicationForCandidate> applications = jobApplicationRepository.findByJobPrefixAndEmail(jobPrefix,
 					candidateEmail);
-			for (JobApplicationForCandidate application : applications) {
-				application.setExamCompletedStatus("Aptitude Completed");
+			// Counted once: it cannot change between application rows, and asking per
+			// row ran the same query for every one of them.
+			long pending = assessmentRepository
+					.countByCandidateEmailAndJobPrefixAndExamAttendedFalse(candidateEmail, jobPrefix);
 
-				// Check if all assessments for this candidate+job are completed
-				long pending = assessmentRepository.countByCandidateEmailAndJobPrefixAndExamAttendedFalse(
-						candidateEmail, jobPrefix);
+			for (JobApplicationForCandidate application : applications) {
+				application.setExamCompletedStatus(examCompletedStatusFor(assessment, pending));
+
 				if (pending == 0 && application.getStatus() == ApplicationStatus.EXAM_SENT) {
 					StatusTransitionValidator.validate(application.getStatus(), ApplicationStatus.EXAM_COMPLETED);
 					application.setStatus(ApplicationStatus.EXAM_COMPLETED);
@@ -330,13 +332,49 @@ public class AssessmentServiceImpl implements AssessmentService {
 				jobApplicationRepository.save(application);
 			}
 
-			emailService.sendSuccessExamAttend(candidateEmail, jobPrefix);
+			sendSubmissionEmail(assessment);
 			logger.info("Email notification sent and job application status updated for: {}", candidateEmail);
 		} else {
 			logger.warn("Candidate email or jobPrefix not available for assessment ID: {}", id);
 		}
 
 		return "Assessment submitted successfully.";
+	}
+
+	/**
+	 * Tells the candidate their paper was received, naming the test they actually
+	 * sat.
+	 *
+	 * Chosen from the assessment's own type rather than from the endpoint that was
+	 * called. The two mails differ only in which test they name, and having one
+	 * route hardcode each meant the aptitude paper — which the exam page reports
+	 * through the same route as coding — told every candidate their coding test was
+	 * in, for a test many of them had not been set.
+	 */
+	private void sendSubmissionEmail(Assessment assessment) {
+		if (assessment.getAssessmentType() == AssessmentType.CODING) {
+			emailService.sendSuccessCodingExamAttend(assessment.getCandidateEmail(), assessment.getJobPrefix());
+		} else {
+			emailService.sendSuccessExamAttend(assessment.getCandidateEmail(), assessment.getJobPrefix());
+		}
+	}
+
+	/**
+	 * What the application row should say now this paper is in.
+	 *
+	 * Names the module while anything is still outstanding, so a candidate who has
+	 * handed in aptitude and still owes coding does not read as finished, and says
+	 * the exam is complete only once nothing is pending. Both routes wrote a fixed
+	 * string before — one always "Aptitude Completed", the other always "Exam
+	 * Completed" — so the column described the endpoint rather than the candidate.
+	 *
+	 * @param pending assessments still unattended for this candidate and job
+	 */
+	private String examCompletedStatusFor(Assessment assessment, long pending) {
+		if (pending == 0) {
+			return "Exam Completed";
+		}
+		return assessment.getAssessmentType() == AssessmentType.CODING ? "Coding Completed" : "Aptitude Completed";
 	}
 
 	/**
@@ -571,19 +609,23 @@ public class AssessmentServiceImpl implements AssessmentService {
 		List<JobApplicationForCandidate> applications = jobApplicationRepository
 				.findByJobPrefixAndEmail(assessment.getJobPrefix(), email);
 
-		JobApplicationForCandidate application = applications.get(0);
-		String mobileNumber = application.getMobileNumber();
-
+		// Checked before the list is read, not after: taking element 0 first threw
+		// IndexOutOfBounds on exactly the case this guard exists to report.
 		if (applications.isEmpty()) {
 			throw new ResourceNotFoundException("No job application found for the given jobPrefix and email.");
 		}
 
-		for (JobApplicationForCandidate app : applications) {
-			app.setExamCompletedStatus("Exam Completed");
-			jobApplicationRepository.save(app);
-			emailService.sendSuccessCodingExamAttend(email, assessment.getJobPrefix());
+		long pending = assessmentRepository
+				.countByCandidateEmailAndJobPrefixAndExamAttendedFalse(email, assessment.getJobPrefix());
 
+		for (JobApplicationForCandidate app : applications) {
+			app.setExamCompletedStatus(examCompletedStatusFor(assessment, pending));
+			jobApplicationRepository.save(app);
 		}
+
+		// Sent once, not once per application row — a candidate holding two rows for
+		// the same job was mailed twice for a single submission.
+		sendSubmissionEmail(assessment);
 	}
 
 	@Override
