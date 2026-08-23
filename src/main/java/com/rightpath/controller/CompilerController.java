@@ -114,6 +114,9 @@ public class CompilerController {
 			entity.setUserEmail(dto.getUserEmail());
 			entity.setJobPrefix(dto.getJobPrefix());
 			entity.setQuestionId(dto.getQuestionId());
+			// Without this these rows belong to no attempt, so a re-sit cannot be told
+			// apart from the sitting before it.
+			entity.setAssessmentId(dto.getAssessmentId());
 			entity.setCreatedAt(LocalDateTime.now());
 			entity.setPassed(false);
 			entity.setAttempted(true);
@@ -261,6 +264,11 @@ public class CompilerController {
 
 	private CodeSubmissionResponseDTO mapSubmissionToDTO(CodeSubmission submission) {
 		CodeSubmissionResponseDTO dto = new CodeSubmissionResponseDTO();
+		// The row's own identity, and the attempt it belongs to. Both were declared on
+		// the DTO and never populated, so every submission came back with a null id and
+		// no way to tell which sitting produced it.
+		dto.setId(submission.getId());
+		dto.setAssessmentId(submission.getAssessmentId());
 		dto.setLanguage(submission.getLanguage());
 		dto.setScript(submission.getScript());
 		dto.setUserEmail(submission.getUserEmail());
