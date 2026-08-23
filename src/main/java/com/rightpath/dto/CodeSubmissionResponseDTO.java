@@ -30,6 +30,16 @@ public class CodeSubmissionResponseDTO {
 	private Boolean passed;
 
 	/**
+	 * The assessment this run was made against.
+	 *
+	 * Carried so a re-sit's runs can be told from the original's. The column has
+	 * always been written; leaving it out of the response left the review screens
+	 * splitting attempts on timestamps alone, which filed an earlier attempt's work
+	 * under the later one. Null on rows written before it was recorded.
+	 */
+	private String assessmentId;
+
+	/**
 	 * The submission's overall verdict: PASSED when every case passed, otherwise
 	 * the most significant failure — a compile error outranks a timeout, which
 	 * outranks a wrong answer.
