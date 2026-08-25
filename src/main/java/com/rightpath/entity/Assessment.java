@@ -58,6 +58,19 @@ public class Assessment {
     private LocalDateTime startTime;
     private LocalDateTime deadline;
 
+    /**
+     * When the candidate actually opened this paper, as opposed to
+     * {@link #startTime}, which is when the window was scheduled to open.
+     *
+     * <p>Stamped once, the first time the exam page reports the paper as
+     * attended, and never overwritten — a reload part-way through must not look
+     * like a fresh start. Null for attempts sat before this was recorded; those
+     * can still be placed from the submission record, which carries how much of
+     * the clock was left.</p>
+     */
+    @Column(name = "exam_started_at")
+    private LocalDateTime examStartedAt;
+
     @OneToOne(mappedBy = "assessment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private Result result;

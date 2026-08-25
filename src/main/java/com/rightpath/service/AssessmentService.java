@@ -160,6 +160,18 @@ public interface AssessmentService {
      */
     void markExamAsAttended(String candidateEmail, Long assessmentId);
 
+    /**
+     * Moves the exam window of a paper the candidate has not sat yet.
+     *
+     * @param id       the assessment to move
+     * @param start    the new opening moment
+     * @param deadline the new closing moment
+     * @param notify   email the candidate their exam link with the new window
+     * @return the updated assessment
+     */
+    Assessment rescheduleAssessment(Long id, java.time.LocalDateTime start, java.time.LocalDateTime deadline,
+            boolean notify);
+
     String assignAssessmentToStorage(AssignAssessmentBlobDto dto);
     String downloadFileContentFromStorage(String containerName, String fileName);
 
