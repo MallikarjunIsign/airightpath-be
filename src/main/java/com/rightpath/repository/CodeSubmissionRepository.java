@@ -54,6 +54,15 @@ public interface CodeSubmissionRepository extends JpaRepository<CodeSubmission, 
     List<CodeSubmission> findByUserEmailAndQuestionId(String userEmail, String questionId);
     
   
+    /**
+     * One candidate's last run at each question, on every attempt they were
+     * given.
+     *
+     * <p>Grouped by the assessment for the same reason as
+     * {@link #findLatestSubmissionsByJobPrefix}: a re-sit reuses the question ids
+     * of the sitting before it, so without it the newer attempt's rows win the
+     * MAX(id) and the earlier attempt's runs are never returned.</p>
+     */
     @Query("""
     	    SELECT cs FROM CodeSubmission cs
     	    WHERE cs.userEmail = :userEmail
@@ -63,7 +72,7 @@ public interface CodeSubmissionRepository extends JpaRepository<CodeSubmission, 
     	          FROM CodeSubmission c2
     	          WHERE c2.userEmail = :userEmail
     	            AND c2.jobPrefix = :jobPrefix
-    	          GROUP BY c2.questionId
+    	          GROUP BY c2.questionId, c2.assessmentId
     	      )
     	    ORDER BY cs.id DESC
     	""")
