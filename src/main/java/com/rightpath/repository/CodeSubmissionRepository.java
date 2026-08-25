@@ -82,6 +82,21 @@ public interface CodeSubmissionRepository extends JpaRepository<CodeSubmission, 
             String assessmentId
     );
 
+    /**
+     * The last run each candidate made at each question, on every attempt they
+     * were given.
+     *
+     * <p>Grouped by the assessment as well as the question. Without that, the
+     * group is one row per candidate per question for the whole job — and a
+     * re-sit reuses the same question ids as the sitting before it, so the newer
+     * attempt won the MAX(id) and the earlier attempt's runs were never returned
+     * at all. They were never deleted; this query hid them, and the review screen
+     * showed the first attempt with none of its test results.</p>
+     *
+     * <p>Rows recorded before the assessment was stamped on them carry a null
+     * assessment id and group together exactly as they always did, so historic
+     * data reads unchanged.</p>
+     */
     @Query("""
         SELECT cs FROM CodeSubmission cs
         WHERE cs.jobPrefix = :jobPrefix
@@ -89,7 +104,7 @@ public interface CodeSubmissionRepository extends JpaRepository<CodeSubmission, 
               SELECT MAX(c2.id)
               FROM CodeSubmission c2
               WHERE c2.jobPrefix = :jobPrefix
-              GROUP BY c2.userEmail, c2.questionId
+              GROUP BY c2.userEmail, c2.questionId, c2.assessmentId
           )
         ORDER BY cs.userEmail, cs.id DESC
     """)
