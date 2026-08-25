@@ -2,6 +2,7 @@ package com.rightpath.controller;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -404,6 +406,58 @@ public class AssessmentController {
 
         return new ResponseEntity<>(paper, HttpStatus.OK);
     }
+	
+	/**
+	 * Moves the exam window of a paper that has not been sat.
+	 *
+	 * <p>Times arrive as the picker writes them, {@code yyyy-MM-dd'T'HH:mm}, the
+	 * same shape the assign endpoint takes.</p>
+	 *
+	 * @param id      the assessment to move
+	 * @param request startTime, deadline, and whether to email the candidate
+	 * @return the updated window
+	 */
+	@PatchMapping("/assessments/{id}/schedule")
+	@PreAuthorize("hasAuthority('ASSESSMENT_ASSIGN')")
+	public ResponseEntity<Map<String, Object>> rescheduleAssessment(@PathVariable Long id,
+			@RequestBody Map<String, Object> request) {
+	
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+		String startRaw = (String) request.get("startTime");
+		String deadlineRaw = (String) request.get("deadline");
+		// Defaults to notifying: the candidate was told the old window, so a silent
+		// move leaves them turning up to an exam that is no longer there.
+		boolean notify = !Boolean.FALSE.equals(request.get("notify"));
+	
+		Map<String, Object> response = new HashMap<>();
+		if (startRaw == null || deadlineRaw == null) {
+			response.put("status", "error");
+			response.put("message", "Both startTime and deadline are required.");
+			return ResponseEntity.badRequest().body(response);
+		}
+	
+		LocalDateTime start;
+		LocalDateTime deadline;
+		try {
+			start = LocalDateTime.parse(startRaw, formatter);
+			deadline = LocalDateTime.parse(deadlineRaw, formatter);
+		} catch (DateTimeParseException e) {
+			response.put("status", "error");
+			response.put("message", "Times must look like yyyy-MM-ddTHH:mm.");
+			return ResponseEntity.badRequest().body(response);
+		}
+	
+		Assessment updated = assessmentService.rescheduleAssessment(id, start, deadline, notify);
+	
+		response.put("status", "success");
+		response.put("message", notify
+				? "Exam window updated and the candidate has been emailed."
+				: "Exam window updated.");
+		response.put("startTime", updated.getStartTime());
+		response.put("deadline", updated.getDeadline());
+		response.put("expired", updated.isExpired());
+		return ResponseEntity.ok(response);
+	}
 	
 	@PostMapping("/markExamAttended")
     public ResponseEntity<?> markExamAttended(@RequestBody Map<String, Object> request) {

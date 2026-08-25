@@ -3,6 +3,7 @@ package com.rightpath.service.impl;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -342,6 +343,59 @@ public class AssessmentServiceImpl implements AssessmentService {
 	}
 
 	/**
+	 * Moves a paper's exam window, and tells the candidate where it moved to.
+	 *
+	 * <p>Only a paper that has not been sat can move. Once a candidate has opened
+	 * and submitted it, the window it was sat under is part of the record: changing
+	 * it cannot give them any more time and would leave the result describing a
+	 * sitting that never happened.</p>
+	 *
+	 * <p>A window whose deadline has come round again is no longer expired — the
+	 * flag is cleared here rather than waiting for the sweep to notice, so the
+	 * candidate can sit the paper as soon as the recruiter has moved it.</p>
+	 *
+	 * @param id       the assessment to move
+	 * @param start    the new opening moment
+	 * @param deadline the new closing moment
+	 * @param notify   send the candidate their exam link with the new window
+	 * @return the updated assessment
+	 */
+	@Override
+	public Assessment rescheduleAssessment(Long id, LocalDateTime start, LocalDateTime deadline, boolean notify) {
+		Assessment assessment = assessmentRepository.findById(id)
+				.orElseThrow(() -> new ResourceNotFoundException("Assessment not found for ID: " + id));
+	
+		if (assessment.isExamAttended()) {
+			throw new IllegalStateException(
+					"This paper has already been sat, so its exam window can no longer be changed.");
+		}
+		if (start == null || deadline == null || !start.isBefore(deadline)) {
+			throw new IllegalArgumentException("The exam window must start before it ends.");
+		}
+	
+		assessment.setStartTime(start);
+		assessment.setDeadline(deadline);
+		assessment.setExpired(deadline.isBefore(LocalDateTime.now()));
+		assessmentRepository.save(assessment);
+	
+		logger.info("Rescheduled assessment {} for {} to {} - {}", id, assessment.getCandidateEmail(), start,
+				deadline);
+	
+		if (notify) {
+			// Best effort, like the assignment mail: the window has moved either way,
+			// and a mail server having a bad day must not roll that back.
+			try {
+				emailService.sendExamLink(assessment.getCandidateEmail(), start, deadline, assessment.getJobPrefix());
+			} catch (Exception e) {
+				logger.warn("Rescheduled assessment {} but could not email {}: {}", id,
+						assessment.getCandidateEmail(), e.getMessage());
+			}
+		}
+	
+		return assessment;
+	}
+	
+	/**
 	 * Tells the candidate their paper was received, naming the test they actually
 	 * sat.
 	 *
@@ -604,6 +658,12 @@ public class AssessmentServiceImpl implements AssessmentService {
 
 		Assessment assessment = assessmentOpt.get();
 		assessment.setExamAttended(true);
+		// Stamped once. The exam page reports the paper attended as it opens, and a
+		// reload part-way through reports it again — overwriting would turn a
+		// candidate who refreshed at the 90-minute mark into one who had just begun.
+		if (assessment.getExamStartedAt() == null) {
+			assessment.setExamStartedAt(LocalDateTime.now(ZoneOffset.UTC));
+		}
 		assessmentRepository.save(assessment);
 
 		List<JobApplicationForCandidate> applications = jobApplicationRepository
