@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import com.rightpath.dto.AssessmentSummaryDTO;
 import com.rightpath.entity.Assessment;
 import com.rightpath.enums.AssessmentType;
 import jakarta.transaction.Transactional;
@@ -169,5 +170,38 @@ public interface AssessmentRepository extends JpaRepository<Assessment, Long> {
      * @return true if at least one assessment exists for the pair
      */
     boolean existsByCandidateEmailAndJobPrefix(String candidateEmail, String jobPrefix);
+
+    /**
+     * Every assignment on a job, as a projection rather than as entities.
+     *
+     * <p>Reviewing a job's results needs each candidate's pass marks and exam
+     * windows. The only route to those was {@code getAssessments?candidateEmail=},
+     * one request per candidate, so a job with 500 candidates cost 500 round
+     * trips before the table could grade a single row. This answers the same
+     * question once.</p>
+     *
+     * <p>A constructor expression, not {@code findByJobPrefix}: selecting
+     * entities would load {@code questionPaper} (TEXT) and {@code answerKey}
+     * (BLOB) for every assignment on the job, which is the bulk of the table and
+     * none of what the caller wants. Naming the columns keeps both out of the
+     * query entirely.</p>
+     *
+     * <p>Ordered oldest first per candidate so a re-assigned paper reads in the
+     * order it was handed over — clients take the last of each type as the
+     * attempt to grade.</p>
+     *
+     * @param jobPrefix the job identifier prefix
+     * @return one row per assignment, empty when the job has none
+     */
+    @Query("""
+            SELECT new com.rightpath.dto.AssessmentSummaryDTO(
+                a.id, a.candidateEmail, a.assessmentType, a.jobPrefix,
+                a.passPercentage, a.assignedAt, a.startTime, a.deadline,
+                a.examStartedAt, a.examAttended, a.expired)
+            FROM Assessment a
+            WHERE a.jobPrefix = :jobPrefix
+            ORDER BY a.candidateEmail ASC, a.assignedAt ASC, a.id ASC
+            """)
+    List<AssessmentSummaryDTO> findSummariesByJobPrefix(@Param("jobPrefix") String jobPrefix);
 
 }

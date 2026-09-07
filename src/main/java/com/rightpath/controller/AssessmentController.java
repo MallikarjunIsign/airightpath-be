@@ -31,6 +31,7 @@ import com.rightpath.dto.AssessmentContentDto;
 import com.rightpath.dto.AssessmentUploadDto;
 import com.rightpath.dto.AssignAssessmentBlobDto;
 import com.rightpath.dto.AssignAssessmentDto;
+import com.rightpath.dto.AssessmentSummaryDTO;
 import com.rightpath.dto.AssignmentReportDTO;
 import com.rightpath.entity.Assessment;
 import com.rightpath.entity.Result;
@@ -377,6 +378,30 @@ public class AssessmentController {
 	public ResponseEntity<List<Result>> getResultsByJobPrefix(@RequestParam String jobPrefix) {
 	    List<Result> results = resultRepository.findByJobPrefix(jobPrefix);
 	    return ResponseEntity.ok(results);
+	}
+
+	/**
+	 * Every assignment on a job, as slim projections.
+	 *
+	 * <p>Companion to {@code /get-results-by-job-prefix}. A results table grades
+	 * each attempt against its own paper's pass mark, and the only way to read
+	 * those was {@code /getAssessments?candidateEmail=} — one request per
+	 * candidate, so reviewing a 500-candidate job opened 500 connections before
+	 * a single row could be graded. This answers for the whole cohort at once.</p>
+	 *
+	 * <p>Returns {@link AssessmentSummaryDTO}, not {@code Assessment}: the entity
+	 * carries the question paper and the answer key, and handing a reviewer every
+	 * paper on the job to display a pass mark would trade one problem for a
+	 * larger one.</p>
+	 *
+	 * @param jobPrefix the job identifier prefix
+	 * @return one row per assignment, oldest first per candidate
+	 */
+	@GetMapping("/assessments/by-job-prefix")
+	@PreAuthorize("hasAuthority('JOB_APPLICATION_READ_ALL')")
+	public ResponseEntity<List<AssessmentSummaryDTO>> getAssessmentSummariesByJobPrefix(
+			@RequestParam String jobPrefix) {
+		return ResponseEntity.ok(assessmentRepository.findSummariesByJobPrefix(jobPrefix));
 	}
 
 
