@@ -82,6 +82,19 @@ rightpath:
         cookie-samesite: Lax
         cookie-path: /api
 
+    # First administrator, created at startup when nobody holds SUPER_ADMIN yet.
+    # Every admin endpoint sits behind a permission, so a brand new database has
+    # no way to grant the first one through the API. Idempotent: once any active
+    # SUPER_ADMIN grant exists this does nothing, and it never resets the
+    # password of an account that already exists.
+    super-admin:
+      enabled: true
+      email: ${SUPER_ADMIN_EMAIL:superadmin@airightpath.com}
+      password: ${SUPER_ADMIN_PASSWORD:Admin@12345}
+      first-name: Super
+      last-name: Admin
+      mobile-number: ${SUPER_ADMIN_MOBILE:9000000001}
+
 # Logging levels (dev = verbose).
 #   com.rightpath=DEBUG shows the access log's inbound line + all app debug.
 #   Flip org.springframework.security to DEBUG for the "Securing ..." trace.

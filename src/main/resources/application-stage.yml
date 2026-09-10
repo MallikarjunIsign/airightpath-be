@@ -89,6 +89,18 @@ rightpath:
         cookie-samesite: Lax
         cookie-path: /api
 
+    # First administrator, created at startup when nobody holds SUPER_ADMIN yet.
+    # Supply both from the environment — with either left blank the bootstrap
+    # logs a warning and skips, rather than standing up a guessable account.
+    # Idempotent: it never resets the password of an account already present.
+    super-admin:
+      enabled: true
+      email: ${SUPER_ADMIN_EMAIL:}
+      password: ${SUPER_ADMIN_PASSWORD:}
+      first-name: Super
+      last-name: Admin
+      mobile-number: ${SUPER_ADMIN_MOBILE:0000000000}
+
 # Logging levels (stage = verbose for integration testing)
 logging:
   level:

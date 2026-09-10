@@ -5,6 +5,7 @@ import java.util.EnumSet;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 
 import com.rightpath.entity.Permission;
 import com.rightpath.entity.Role;
@@ -16,6 +17,9 @@ import com.rightpath.repository.RoleRepository;
 @Configuration
 public class RbacSeedConfig {
 
+    /** Runs first, so {@link SuperAdminInitializer} finds roles and permissions in place. */
+    public static final int ORDER = 10;
+
     /**
      * Seeds roles + permissions if they don't exist.
      *
@@ -23,6 +27,7 @@ public class RbacSeedConfig {
      * Later we can move to Flyway/Liquibase for proper migrations.
      */
     @Bean
+    @Order(ORDER)
     CommandLineRunner rbacSeed(PermissionRepository permissions, RoleRepository roles) {
         return args -> {
             // 1) permissions
@@ -38,10 +43,17 @@ public class RbacSeedConfig {
             java.util.function.Function<PermissionName, Permission> get = pn -> permissions.findByName(pn).orElseThrow();
 
             // 2) roles
-            // NOTE: Some existing deployments have `roles.name` defined too small (or as a restricted enum)
-            // which can truncate SUPER_ADMIN and fail application startup.
-            // We create ADMIN/USER safely, and only create SUPER_ADMIN if it already exists.
-            Role superAdmin = roles.findByName(RoleName.SUPER_ADMIN).orElse(null);
+            // SUPER_ADMIN used to be updated only if it already existed, because some
+            // deployments had `roles.name` sized too small to hold the value and
+            // startup failed on the insert. Role.name now pins the column at
+            // varchar(50), so the value always fits and the role is created like any
+            // other — a database where it is missing has no way to grant a first
+            // administrator, which is the gap SuperAdminInitializer then closes.
+            Role superAdmin = roles.findByName(RoleName.SUPER_ADMIN).orElseGet(() -> {
+                Role r = new Role();
+                r.setName(RoleName.SUPER_ADMIN);
+                return roles.save(r);
+            });
             Role admin = roles.findByName(RoleName.ADMIN).orElseGet(() -> {
                 Role r = new Role();
                 r.setName(RoleName.ADMIN);
@@ -55,13 +67,11 @@ public class RbacSeedConfig {
 
             // 3) role -> perms defaults
             // Super Admin gets everything
-            if (superAdmin != null) {
-                superAdmin.getPermissions().clear();
-                for (PermissionName pn : PermissionName.values()) {
-                    superAdmin.getPermissions().add(get.apply(pn));
-                }
-                roles.save(superAdmin);
+            superAdmin.getPermissions().clear();
+            for (PermissionName pn : PermissionName.values()) {
+                superAdmin.getPermissions().add(get.apply(pn));
             }
+            roles.save(superAdmin);
 
             // Admin gets almost everything except some user/role management if you want (adjust as you wish)
             EnumSet<PermissionName> adminPerms = EnumSet.allOf(PermissionName.class);
