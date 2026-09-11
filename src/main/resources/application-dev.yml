@@ -152,6 +152,28 @@ app:
   cors:
     allowed-origins: "http://localhost:4200,http://localhost:5173,http://192.168.1.8:5173,https://www.airightpath.com,https://airightpath.com,https://dev.airightpath.com"
 
+  # ── Candidate-facing email branding ────────────────────────────────
+  # Every template in EmailServiceImpl reads from here. Held per environment
+  # rather than in application.properties because candidate-portal-url has to
+  # point at *this* environment's front end: a link mailed from dev that
+  # lands on production would send a test candidate into real data.
+  #
+  # Each key also has a code-side default, so a missing entry degrades to the
+  # production wording rather than failing startup — which is exactly why the
+  # non-production sender names below are explicit about not being production.
+
+  mail:
+    from-name: "RightPath Careers (DEV)"
+    company-name: "RightPath"
+    # Blank sends replies to spring.mail.username.
+    support-email: ""
+    website: "https://www.airightpath.com"
+    company-address: "ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089"
+    # Target of the "Start my test" / "Go to my dashboard" buttons.
+    candidate-portal-url: "http://localhost:5173"
+    # Shown on every on-site test mail, so all three quote one address.
+    test-venue: "ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089"
+
 # Terminal WebSocket Configuration
 terminal:
   execution:

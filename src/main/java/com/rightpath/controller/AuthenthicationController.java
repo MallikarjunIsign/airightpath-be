@@ -1,6 +1,7 @@
 package com.rightpath.controller;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -24,7 +25,9 @@ import com.rightpath.dto.LoginResponse;
 import com.rightpath.dto.MessageResponse;
 import com.rightpath.dto.MeResponse;
 import com.rightpath.dto.UserInfo;
+import com.rightpath.dto.CreateStaffUserRequest;
 import com.rightpath.dto.UsersDto;
+import com.rightpath.rbac.RoleName;
 import com.rightpath.entity.Users;
 import com.rightpath.exceptions.InvalidRefreshTokenException;
 import com.rightpath.repository.OtpRepository;
@@ -189,6 +192,51 @@ public class AuthenthicationController {
 	public ResponseEntity<?> getAllNonAdminUsers() {
 		logger.info("Fetching non-admin users.");
 		return ResponseEntity.ok(userDetailsServiceImpl.getNonAdminUsers());
+	}
+
+	/**
+	 * Every staff account — anyone holding ADMIN or SUPER_ADMIN.
+	 *
+	 * <p>{@code /users} above deliberately excludes administrators, so before
+	 * this there was no way to see who holds privileged access. Same
+	 * {@code USER_LIST} authority as the candidate list: whoever may enumerate
+	 * accounts may enumerate all of them.</p>
+	 */
+	@GetMapping("/users/staff")
+	@PreAuthorize("hasAuthority('USER_LIST')")
+	public ResponseEntity<List<UsersDto>> getStaffUsers() {
+		logger.info("Fetching staff users.");
+		return ResponseEntity.ok(userDetailsServiceImpl.getStaffUsers());
+	}
+
+	/**
+	 * Creates an administrator or super administrator.
+	 *
+	 * <p>Guarded by {@code ROLE_MANAGE}, which only SUPER_ADMIN holds — creating
+	 * an account and handing it a staff role is the same privilege as granting
+	 * that role to an existing account, so the two are gated identically.</p>
+	 *
+	 * <p>No self-service route reaches this: {@code /register} always creates a
+	 * candidate, whatever the request body says.</p>
+	 */
+	@PostMapping("/users/staff")
+	@PreAuthorize("hasAuthority('ROLE_MANAGE')")
+	public ResponseEntity<Map<String, String>> createStaffUser(
+			@Valid @RequestBody CreateStaffUserRequest request) {
+		logger.info("Creating staff account {} with role {}", request.email(), request.role());
+
+		// USER would make this endpoint a way to create candidates with none of
+		// the registration flow's steps — no welcome mail, no OTP. Registration
+		// owns that path.
+		if (request.role() == RoleName.USER) {
+			return ResponseEntity.badRequest()
+					.body(Map.of("message", "Use registration to create a candidate account",
+							"status", "error"));
+		}
+
+		userDetailsServiceImpl.createStaffUser(request.toUsersDto(), request.role());
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(Map.of("message", "success", "email", request.email()));
 	}
 
 	/**

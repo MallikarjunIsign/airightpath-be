@@ -39,6 +39,7 @@ import com.rightpath.exceptions.UserNotFoundDbException;
 import com.rightpath.repository.RoleRepository;
 import com.rightpath.repository.UserRoleRepository;
 import com.rightpath.repository.UsersRepository;
+import com.rightpath.rbac.UserRoleName;
 import com.rightpath.service.EmailService;
 import com.rightpath.service.rbac.RbacAuthorityService;
 import com.rightpath.util.ThreadLocalUserContext;
@@ -338,9 +339,114 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
 	// Fetch users who are not admins
 	public List<UsersDto> getNonAdminUsers() {
-		logger.debug("Fetching non-admin users");
-		List<Users> nonAdminUsers = userRepository.findAllNonAdminUsers(com.rightpath.rbac.RoleName.ADMIN);
-		return nonAdminUsers.stream().map(UsersDto::new).collect(Collectors.toList());
+		logger.debug("Fetching candidate users (excluding roles={})", STAFF_ROLES);
+		// Excludes every staff role, not just ADMIN: the previous single-role
+		// exclusion left super admins showing up as candidates too.
+		return withRoles(userRepository.findAllExcludingActiveRoleIn(STAFF_ROLES));
+	}
+
+	/** The roles that make an account staff rather than a candidate. */
+	private static final java.util.List<com.rightpath.rbac.RoleName> STAFF_ROLES =
+			java.util.List.of(com.rightpath.rbac.RoleName.SUPER_ADMIN, com.rightpath.rbac.RoleName.ADMIN);
+
+	/**
+	 * Every staff account — anyone holding ADMIN or SUPER_ADMIN.
+	 *
+	 * <p>Complements {@link #getNonAdminUsers()}: that one answers "who are the
+	 * candidates?", this one "who runs this system?". Both carry roles, because
+	 * on a staff list the role <em>is</em> the point.</p>
+	 */
+	public List<UsersDto> getStaffUsers() {
+		logger.debug("Fetching staff users (roles={})", STAFF_ROLES);
+		return withRoles(userRepository.findAllByActiveRoleIn(STAFF_ROLES));
+	}
+
+	/**
+	 * Creates an account and grants it a staff role in one transaction.
+	 *
+	 * <p>{@link #addUser(UsersDto)} hardcodes the USER role, which is right for
+	 * self-registration and useless here. This runs the same duplicate, strength
+	 * and encoding checks, then assigns the requested role instead — atomically,
+	 * so a failure part-way cannot leave an account with no role at all, which
+	 * would be a candidate login nobody intended to create.</p>
+	 *
+	 * <p>Deliberately sends no welcome email: that template greets a candidate
+	 * and points at the candidate portal, which is the wrong thing to send an
+	 * administrator. Whoever creates the account passes on the credentials.</p>
+	 *
+	 * @param usersDto the account to create; its password is encoded here
+	 * @param role     the role to grant — caller is responsible for authorising it
+	 * @throws UserAlreadyInDatabaseException if the email or mobile is taken
+	 */
+	@Transactional
+	public void createStaffUser(UsersDto usersDto, com.rightpath.rbac.RoleName role) {
+		logger.info("Creating staff account {} with role {}", usersDto.getEmail(), role);
+
+		if (userRepository.existsByEmail(usersDto.getEmail())) {
+			throw new UserAlreadyInDatabaseException("Email already exists");
+		}
+		if (userRepository.existsByMobileNumber(usersDto.getMobileNumber())) {
+			throw new UserAlreadyInDatabaseException("Mobile number already exists");
+		}
+
+		passwordValidator.passwordSizeChecker(usersDto.getPassword());
+
+		Users user = new Users(
+				usersDto.getEmail(),
+				usersDto.getFirstName(),
+				usersDto.getLastName(),
+				bCryptPasswordEncoder.encode(usersDto.getPassword()),
+				// Staff accounts are created ready to use; a disabled admin
+				// cannot sign in to be enabled by anyone.
+				Boolean.TRUE,
+				usersDto.getMobileNumber());
+		userRepository.save(user);
+
+		// Seeded by RbacSeedConfig, but created on demand for the same reason
+		// addUser does it: a fresh database must not fail to make its first admin.
+		com.rightpath.entity.Role roleEntity = roleRepository.findByName(role)
+				.orElseGet(() -> {
+					logger.warn("Role {} not found; creating it on the fly", role);
+					com.rightpath.entity.Role r = new com.rightpath.entity.Role();
+					r.setName(role);
+					return roleRepository.save(r);
+				});
+
+		com.rightpath.entity.UserRole assignment = new com.rightpath.entity.UserRole();
+		assignment.setUser(user);
+		assignment.setRole(roleEntity);
+		assignment.setActive(true);
+		userRoleRepository.save(assignment);
+
+		logger.info("Staff account {} created with role {}", user.getEmail(), role);
+	}
+
+	/**
+	 * Maps users to DTOs with their active roles attached.
+	 *
+	 * <p>The roles come from a single batch query rather than one lookup per
+	 * user: a list that shows a role column would otherwise cost a query per
+	 * row, which is a query per candidate on a screen built to show hundreds.</p>
+	 *
+	 * <p>Every user gets a list, empty where they hold no role — so a client can
+	 * distinguish "no roles" from "roles were never looked up", which stays null.</p>
+	 */
+	private List<UsersDto> withRoles(List<Users> users) {
+		if (users.isEmpty()) {
+			return List.of();
+		}
+
+		List<String> emails = users.stream().map(Users::getEmail).collect(Collectors.toList());
+		Map<String, List<String>> rolesByEmail = userRoleRepository.findActiveRolesByEmails(emails).stream()
+				.collect(Collectors.groupingBy(
+						UserRoleName::userEmail,
+						Collectors.mapping(pair -> pair.role().name(), Collectors.toList())));
+
+		return users.stream().map(user -> {
+			UsersDto dto = new UsersDto(user);
+			dto.setRoles(rolesByEmail.getOrDefault(user.getEmail(), List.of()));
+			return dto;
+		}).collect(Collectors.toList());
 	}
 
 	// Check if email is already registered

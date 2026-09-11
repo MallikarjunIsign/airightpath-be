@@ -21,6 +21,56 @@ public class RbacSeedConfig {
     public static final int ORDER = 10;
 
     /**
+     * Writes reserved to SUPER_ADMIN.
+     *
+     * <p>Activation decides who can sign in at all, and {@code ROLE_MANAGE}
+     * decides who holds power — an admin able to grant SUPER_ADMIN, to anyone
+     * including themselves, already is one, which would make the distinction
+     * between the two roles decorative.</p>
+     */
+    static final EnumSet<PermissionName> SUPER_ADMIN_ONLY = EnumSet.of(
+            PermissionName.USER_ACTIVATE,
+            PermissionName.USER_DEACTIVATE,
+            PermissionName.ROLE_MANAGE);
+
+    /**
+     * What ADMIN is seeded with: everything except {@link #SUPER_ADMIN_ONLY}.
+     *
+     * <p>Read versus write. {@code USER_LIST} is included — an admin runs hiring
+     * day to day and needs to see both candidates and colleagues, and
+     * withholding it left User Management reachable from the sidebar and refused
+     * by the API, so an admin's only signal was a 403.</p>
+     *
+     * <p>Exposed as a method rather than inlined in the seeding lambda so the
+     * boundary can be asserted without booting the application — see
+     * {@code RbacPermissionSplitTest}. It is a security boundary, and one
+     * careless {@code allOf} would widen it silently.</p>
+     */
+    static EnumSet<PermissionName> adminPermissions() {
+        EnumSet<PermissionName> perms = EnumSet.allOf(PermissionName.class);
+        perms.removeAll(SUPER_ADMIN_ONLY);
+        return perms;
+    }
+
+    /** What USER (a candidate) is seeded with: their own profile and the hiring flow. */
+    static EnumSet<PermissionName> userPermissions() {
+        return EnumSet.of(
+                PermissionName.USER_READ,
+                PermissionName.USER_UPDATE,
+                PermissionName.RESUME_UPLOAD,
+                PermissionName.RESUME_UPDATE,
+                PermissionName.RESUME_VIEW,
+                PermissionName.ASSESSMENT_SUBMIT,
+                PermissionName.ASSESSMENT_RESULT_SUBMIT,
+                PermissionName.JOB_POST_READ,
+                PermissionName.JOB_APPLY,
+                PermissionName.INTERVIEW_START,
+                PermissionName.INTERVIEW_ANSWER,
+                PermissionName.COMPILER_RUN,
+                PermissionName.COMPILER_RESULTS_READ);
+    }
+
+    /**
      * Seeds roles + permissions if they don't exist.
      *
      * With spring.jpa.hibernate.ddl-auto=update, this is the simplest way to get a baseline.
@@ -73,33 +123,14 @@ public class RbacSeedConfig {
             }
             roles.save(superAdmin);
 
-            // Admin gets almost everything except some user/role management if you want (adjust as you wish)
-            EnumSet<PermissionName> adminPerms = EnumSet.allOf(PermissionName.class);
-            adminPerms.remove(PermissionName.USER_LIST);
-            adminPerms.remove(PermissionName.USER_ACTIVATE);
-            adminPerms.remove(PermissionName.USER_DEACTIVATE);
+            EnumSet<PermissionName> adminPerms = adminPermissions();
             admin.getPermissions().clear();
             for (PermissionName pn : adminPerms) {
                 admin.getPermissions().add(get.apply(pn));
             }
             roles.save(admin);
 
-            // User gets limited set
-            EnumSet<PermissionName> userPerms = EnumSet.of(
-                    PermissionName.USER_READ,
-                    PermissionName.USER_UPDATE,
-                    PermissionName.RESUME_UPLOAD,
-                    PermissionName.RESUME_UPDATE,
-                    PermissionName.RESUME_VIEW,
-                    PermissionName.ASSESSMENT_SUBMIT,
-                    PermissionName.ASSESSMENT_RESULT_SUBMIT,
-                    PermissionName.JOB_POST_READ,
-                    PermissionName.JOB_APPLY,
-                    PermissionName.INTERVIEW_START,
-                    PermissionName.INTERVIEW_ANSWER,
-                    PermissionName.COMPILER_RUN,
-                    PermissionName.COMPILER_RESULTS_READ
-            );
+            EnumSet<PermissionName> userPerms = userPermissions();
             user.getPermissions().clear();
             for (PermissionName pn : userPerms) {
                 user.getPermissions().add(get.apply(pn));

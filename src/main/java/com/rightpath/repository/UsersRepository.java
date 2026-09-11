@@ -1,5 +1,6 @@
 package com.rightpath.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,15 +49,42 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	public void activeByEmail(@Param("email") String email);
 
 	/**
-	 * Retrieves all non-admin users by checking that a specific role is not in
-	 * their RBAC roles.
+	 * Users holding none of the given roles through an active assignment.
 	 *
-	 * @param adminRole The admin role to be excluded.
-	 * @return A list of all users who do not have the admin role.
+	 * <p>Used for the candidate list, where the roles excluded are the staff
+	 * ones. Takes a collection rather than the single {@code RoleName} it used
+	 * to: excluding only ADMIN left every SUPER_ADMIN on the candidate list as
+	 * well as the staff list, so the same account was administered from two
+	 * screens. The complement of {@link #findAllByActiveRoleIn(Collection)} —
+	 * pass both the same roles and no account can fall through or appear twice.</p>
+	 *
+	 * @param roleNames roles that disqualify a user; an empty collection returns everyone
+	 * @return matching users, each once, ordered by email
 	 */
 	@Query("SELECT DISTINCT u FROM Users u WHERE u.email NOT IN (" +
-			"SELECT ur.user.email FROM UserRole ur WHERE ur.active = true AND ur.role.name = :adminRole)")
-	List<Users> findAllNonAdminUsers(@Param("adminRole") RoleName adminRole);
+			"SELECT ur.user.email FROM UserRole ur WHERE ur.active = true AND ur.role.name IN :roleNames) " +
+			"ORDER BY u.email ASC")
+	List<Users> findAllExcludingActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames);
+
+	/**
+	 * Users holding any of the given roles through an active assignment.
+	 *
+	 * <p>The counterpart to {@link #findAllExcludingActiveRoleIn(Collection)}.
+	 * Staff administration needs this selection — the accounts that <em>do</em>
+	 * hold ADMIN or SUPER_ADMIN — and there was no way to ask for it.</p>
+	 *
+	 * <p>Matches on {@code active = true}, so a revoked assignment does not keep
+	 * someone on the staff list. {@code DISTINCT} because an account holding both
+	 * roles would otherwise appear twice, and ordered by email so the list does
+	 * not reshuffle between requests.</p>
+	 *
+	 * @param roleNames roles to match; an empty collection returns nothing
+	 * @return matching users, each once, ordered by email
+	 */
+	@Query("SELECT DISTINCT u FROM Users u WHERE u.email IN (" +
+			"SELECT ur.user.email FROM UserRole ur WHERE ur.active = true AND ur.role.name IN :roleNames) " +
+			"ORDER BY u.email ASC")
+	List<Users> findAllByActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames);
 
 	/**
 	 * Updates a user's password by their email.

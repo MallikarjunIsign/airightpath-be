@@ -13,6 +13,20 @@ public enum PermissionName {
     USER_ACTIVATE,
     USER_DEACTIVATE,
 
+    /**
+     * Granting and revoking roles, and creating staff accounts.
+     *
+     * <p>Separate from {@link #USER_UPDATE} because that one means "may edit a
+     * profile" and is held by every candidate so they can maintain their own.
+     * Role assignment was guarded by it, which made every signed-in candidate
+     * able to grant themselves SUPER_ADMIN. Changing who may assign roles is
+     * therefore not a tightening of an existing rule — it is closing a hole.</p>
+     *
+     * <p>Seeded to SUPER_ADMIN only. ADMIN cannot hold it: an admin who can mint
+     * super admins is a super admin with extra steps.</p>
+     */
+    ROLE_MANAGE,
+
     // Resume
     RESUME_UPLOAD,
     RESUME_UPDATE,

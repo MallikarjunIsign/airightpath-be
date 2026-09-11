@@ -32,14 +32,14 @@ public class RbacAdminController {
     }
 
     @PostMapping("/assign-role")
-    @PreAuthorize("hasAuthority('USER_UPDATE')")
+    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
     public ResponseEntity<ApiResponse<MessageResponse>> assignRole(@Valid @RequestBody RoleAssignmentRequest req) {
         rbacAdminService.assignRole(req.userEmail(), req.role());
         return ResponseEntity.ok(ApiResponse.ok(new MessageResponse("Role assigned")));
     }
 
     @PostMapping("/remove-role")
-    @PreAuthorize("hasAuthority('USER_UPDATE')")
+    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
     public ResponseEntity<ApiResponse<MessageResponse>> removeRole(@Valid @RequestBody RoleAssignmentRequest req) {
         rbacAdminService.removeRole(req.userEmail(), req.role());
         return ResponseEntity.ok(ApiResponse.ok(new MessageResponse("Role removed")));
