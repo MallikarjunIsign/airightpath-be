@@ -437,7 +437,13 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 		}
 
 		List<String> emails = users.stream().map(Users::getEmail).collect(Collectors.toList());
+		// Null-safe on both halves of the pair. Neither column is nullable, so a
+		// null here means the data is already wrong — but Collectors.groupingBy
+		// throws on a null key, which would turn one bad assignment row into a
+		// 500 for the entire list. Skipping the row costs that user a badge;
+		// throwing costs everyone the page.
 		Map<String, List<String>> rolesByEmail = userRoleRepository.findActiveRolesByEmails(emails).stream()
+				.filter(pair -> pair != null && pair.userEmail() != null && pair.role() != null)
 				.collect(Collectors.groupingBy(
 						UserRoleName::userEmail,
 						Collectors.mapping(pair -> pair.role().name(), Collectors.toList())));
@@ -445,6 +451,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 		return users.stream().map(user -> {
 			UsersDto dto = new UsersDto(user);
 			dto.setRoles(rolesByEmail.getOrDefault(user.getEmail(), List.of()));
+			// Drop the avatar from list rows.
+			//
+			// UsersDto copies profileImage straight off the entity, and Jackson
+			// base64s it into every row: two accounts with photos came to 215 KB
+			// of JSON, and a real roster multiplies that by the page size. No
+			// client reads it from a list — avatars are fetched one at a time
+			// from /api/profile-image/{email} — so it is pure weight, and enough
+			// of it to exhaust a response or the heap.
+			dto.setProfileImage(null);
 			return dto;
 		}).collect(Collectors.toList());
 	}
