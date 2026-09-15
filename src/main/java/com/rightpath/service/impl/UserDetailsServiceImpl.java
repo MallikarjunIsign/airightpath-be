@@ -15,6 +15,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory; // For logging
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy; // Lazy loads beans
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.AuthenticationManager; // Used for authenticating users
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken; // Used for passing authentication data
 import org.springframework.security.core.Authentication; // Represents authentication token
@@ -340,9 +345,78 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 	// Fetch users who are not admins
 	public List<UsersDto> getNonAdminUsers() {
 		logger.debug("Fetching candidate users (excluding roles={})", STAFF_ROLES);
-		// Excludes every staff role, not just ADMIN: the previous single-role
-		// exclusion left super admins showing up as candidates too.
-		return withRoles(userRepository.findAllExcludingActiveRoleIn(STAFF_ROLES));
+		// Unpaged callers get the first page at the maximum size rather than the
+		// whole table: the query this replaced took MySQL out of sort memory, and
+		// an unbounded list is how it got there.
+		return getCandidateUsers(PageRequest.of(0, MAX_PAGE_SIZE, EMAIL_ASC)).getContent();
+	}
+
+	/** Page size when a request does not ask for one. */
+	public static final int DEFAULT_PAGE_SIZE = 20;
+	/** Ceiling on a requested page size, so one caller cannot ask for the table. */
+	public static final int MAX_PAGE_SIZE = 100;
+
+	/**
+	 * Email ascending — the only ordering that makes these pages stable.
+	 *
+	 * <p>Email is the primary key, so it is unique and never null. Paging an
+	 * unordered query lets the database return rows in any order per call, which
+	 * shows one account on two pages and hides another entirely.</p>
+	 */
+	private static final Sort EMAIL_ASC = Sort.by(Sort.Direction.ASC, "email");
+
+	/** Clamps a requested page and size into something safe to execute. */
+	public static Pageable toPageable(Integer page, Integer size) {
+		int resolvedPage = (page == null || page < 0) ? 0 : page;
+		int requested = (size == null || size < 1) ? DEFAULT_PAGE_SIZE : size;
+		return PageRequest.of(resolvedPage, Math.min(requested, MAX_PAGE_SIZE), EMAIL_ASC);
+	}
+
+	/** One page of candidates — every account holding no staff role. */
+	public Page<UsersDto> getCandidateUsers(Pageable pageable) {
+		return toDtoPage(userRepository.findPageExcludingActiveRoleIn(STAFF_ROLES, pageable), pageable);
+	}
+
+	/** One page of staff — every account holding ADMIN or SUPER_ADMIN. */
+	public Page<UsersDto> getStaffUsersPage(Pageable pageable) {
+		return toDtoPage(userRepository.findPageByActiveRoleIn(STAFF_ROLES, pageable), pageable);
+	}
+
+	/**
+	 * One page of the whole roster, for the admin user screen.
+	 *
+	 * <p>Staff and candidates in one sorted, filterable list. The two role-scoped
+	 * endpoints keep their own semantics; this exists because merging two
+	 * independent pagers client-side cannot give stable page boundaries — a row
+	 * ends up on two pages or on none.</p>
+	 *
+	 * @param role   narrow to one role, or null for every account
+	 * @param search free text matched against email and full name, or null
+	 */
+	public Page<UsersDto> getDirectory(com.rightpath.rbac.RoleName role, String search, Pageable pageable) {
+		// Normalised here rather than in the query so the JPQL stays a plain
+		// LIKE: null means "no text filter", and a blank box means the same.
+		String term = (search == null || search.isBlank())
+				? null
+				: "%" + search.trim().toLowerCase() + "%";
+
+		Page<Users> page = (role == null)
+				? userRepository.findDirectory(term, pageable)
+				: userRepository.findDirectoryByRole(role, term, pageable);
+		return toDtoPage(page, pageable);
+	}
+
+	/**
+	 * Converts a page of entities to DTOs, attaching roles in one query.
+	 *
+	 * <p>Not {@code page.map(...)}: that maps one element at a time, so building
+	 * each DTO's roles individually would cost a query per row — a page of 100
+	 * accounts turning into 100 round trips to fill one column. {@link #withRoles}
+	 * batches the whole page instead, and the total comes from the original page
+	 * so the count reflects the query, not the slice.</p>
+	 */
+	private Page<UsersDto> toDtoPage(Page<Users> page, Pageable pageable) {
+		return new PageImpl<>(withRoles(page.getContent()), pageable, page.getTotalElements());
 	}
 
 	/** The roles that make an account staff rather than a candidate. */
@@ -358,7 +432,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 	 */
 	public List<UsersDto> getStaffUsers() {
 		logger.debug("Fetching staff users (roles={})", STAFF_ROLES);
-		return withRoles(userRepository.findAllByActiveRoleIn(STAFF_ROLES));
+		// Bounded like the candidate equivalent: the first page at the maximum
+		// size, never the whole table. Staff lists are short, so in practice this
+		// still returns everyone while refusing to grow without limit.
+		return getStaffUsersPage(PageRequest.of(0, MAX_PAGE_SIZE, EMAIL_ASC)).getContent();
 	}
 
 	/**

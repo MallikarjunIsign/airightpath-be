@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -37,8 +39,14 @@ class StaffUserResponseTest {
         ReflectionTestUtils.setField(service, "userRoleRepository", userRoleRepository);
 
         List<UsersDto> response = service.getStaffUsers();
-        Set<String> expected = usersRepository.findAllByActiveRoleIn(
-                List.of(RoleName.ADMIN, RoleName.SUPER_ADMIN)).stream()
+        // Paginated now: the role queries were rewritten to EXISTS and take a
+        // Pageable, because the previous NOT IN + DISTINCT + ORDER BY form failed
+        // with MySQL 1038. A page large enough to hold every staff account keeps
+        // this comparing the same set it always did.
+        Set<String> expected = usersRepository.findPageByActiveRoleIn(
+                List.of(RoleName.ADMIN, RoleName.SUPER_ADMIN),
+                PageRequest.of(0, 500, Sort.by(Sort.Direction.ASC, "email")))
+                .getContent().stream()
                 .map(user -> user.getEmail()).collect(Collectors.toSet());
         assertEquals(expected, response.stream().map(UsersDto::getEmail).collect(Collectors.toSet()));
         assertEquals(expected.size(), response.size());

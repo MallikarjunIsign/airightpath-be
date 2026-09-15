@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -49,42 +51,133 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	public void activeByEmail(@Param("email") String email);
 
 	/**
-	 * Users holding none of the given roles through an active assignment.
+	 * One page of users holding none of the given roles through an active
+	 * assignment — the candidate list, where the excluded roles are the staff ones.
 	 *
-	 * <p>Used for the candidate list, where the roles excluded are the staff
-	 * ones. Takes a collection rather than the single {@code RoleName} it used
-	 * to: excluding only ADMIN left every SUPER_ADMIN on the candidate list as
-	 * well as the staff list, so the same account was administered from two
-	 * screens. The complement of {@link #findAllByActiveRoleIn(Collection)} —
-	 * pass both the same roles and no account can fall through or appear twice.</p>
+	 * <p>A correlated {@code NOT EXISTS}, not a subquery membership test. The old
+	 * form materialised the subquery and, together with {@code DISTINCT} and an
+	 * {@code ORDER BY} on email, made MySQL sort the joined result — which failed
+	 * outright with <em>1038 Out of sort memory</em> on barely a hundred users.
+	 * {@code EXISTS} short-circuits per row against
+	 * {@code idx_user_roles_email_active}, and only the page is sorted.</p>
+	 *
+	 * <p>{@code DISTINCT} went with it. It was there to collapse the duplicate
+	 * rows the old join produced, and collapsing them is what forced the sort; a
+	 * per-row predicate cannot duplicate the outer row in the first place.</p>
+	 *
+	 * <p>Ordering comes from the {@link Pageable} so the caller states it once.
+	 * An unordered paginated query is free to show one user on two pages and
+	 * another on none.</p>
 	 *
 	 * @param roleNames roles that disqualify a user; an empty collection returns everyone
-	 * @return matching users, each once, ordered by email
+	 * @param pageable  page, size and sort — sort by {@code email} for determinism
+	 * @return the requested page, plus the total count
 	 */
-	@Query("SELECT DISTINCT u FROM Users u WHERE u.email NOT IN (" +
-			"SELECT ur.user.email FROM UserRole ur WHERE ur.active = true AND ur.role.name IN :roleNames) " +
-			"ORDER BY u.email ASC")
-	List<Users> findAllExcludingActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames);
+	@Query(value = """
+			SELECT u FROM Users u
+			WHERE NOT EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name IN :roleNames)
+			""",
+			countQuery = """
+			SELECT COUNT(u) FROM Users u
+			WHERE NOT EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name IN :roleNames)
+			""")
+	Page<Users> findPageExcludingActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames,
+			Pageable pageable);
 
 	/**
-	 * Users holding any of the given roles through an active assignment.
+	 * One page of users holding any of the given roles — the staff list.
 	 *
-	 * <p>The counterpart to {@link #findAllExcludingActiveRoleIn(Collection)}.
-	 * Staff administration needs this selection — the accounts that <em>do</em>
-	 * hold ADMIN or SUPER_ADMIN — and there was no way to ask for it.</p>
-	 *
-	 * <p>Matches on {@code active = true}, so a revoked assignment does not keep
-	 * someone on the staff list. {@code DISTINCT} because an account holding both
-	 * roles would otherwise appear twice, and ordered by email so the list does
-	 * not reshuffle between requests.</p>
+	 * <p>The exact complement of
+	 * {@link #findPageExcludingActiveRoleIn(Collection, Pageable)}: give both the
+	 * same roles and every account falls in exactly one of the two lists. Same
+	 * {@code EXISTS} rewrite for the same reason, and {@code active = true} so a
+	 * revoked assignment does not keep someone on the staff list.</p>
 	 *
 	 * @param roleNames roles to match; an empty collection returns nothing
-	 * @return matching users, each once, ordered by email
+	 * @param pageable  page, size and sort — sort by {@code email} for determinism
+	 * @return the requested page, plus the total count
 	 */
-	@Query("SELECT DISTINCT u FROM Users u WHERE u.email IN (" +
-			"SELECT ur.user.email FROM UserRole ur WHERE ur.active = true AND ur.role.name IN :roleNames) " +
-			"ORDER BY u.email ASC")
-	List<Users> findAllByActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames);
+	@Query(value = """
+			SELECT u FROM Users u
+			WHERE EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name IN :roleNames)
+			""",
+			countQuery = """
+			SELECT COUNT(u) FROM Users u
+			WHERE EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name IN :roleNames)
+			""")
+	Page<Users> findPageByActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames, Pageable pageable);
+
+	/**
+	 * One page of the whole roster, optionally narrowed by a name/email search.
+	 *
+	 * <p>The two role-scoped queries above answer "staff" and "candidates"
+	 * separately, which is right for their own endpoints and wrong for a screen
+	 * that shows one combined, sorted, filterable list — merging two independent
+	 * pagers cannot produce stable page boundaries.</p>
+	 *
+	 * @param search lower-cased {@code %term%}, or null for no text filter
+	 */
+	@Query(value = """
+			SELECT u FROM Users u
+			WHERE (:search IS NULL
+			       OR LOWER(u.email) LIKE :search
+			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
+			""",
+			countQuery = """
+			SELECT COUNT(u) FROM Users u
+			WHERE (:search IS NULL
+			       OR LOWER(u.email) LIKE :search
+			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
+			""")
+	Page<Users> findDirectory(@Param("search") String search, Pageable pageable);
+
+	/**
+	 * One page of the roster holding a specific role, optionally searched.
+	 *
+	 * <p>Same {@code EXISTS} shape as the staff query — a per-row predicate
+	 * against {@code idx_user_roles_email_active}, no {@code DISTINCT}, so no
+	 * sort of a joined result.</p>
+	 */
+	@Query(value = """
+			SELECT u FROM Users u
+			WHERE EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name = :role)
+			  AND (:search IS NULL
+			       OR LOWER(u.email) LIKE :search
+			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
+			""",
+			countQuery = """
+			SELECT COUNT(u) FROM Users u
+			WHERE EXISTS (
+			    SELECT ur.id FROM UserRole ur
+			    WHERE ur.user.email = u.email
+			      AND ur.active = true
+			      AND ur.role.name = :role)
+			  AND (:search IS NULL
+			       OR LOWER(u.email) LIKE :search
+			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
+			""")
+	Page<Users> findDirectoryByRole(@Param("role") RoleName role, @Param("search") String search,
+			Pageable pageable);
 
 	/**
 	 * Updates a user's password by their email.

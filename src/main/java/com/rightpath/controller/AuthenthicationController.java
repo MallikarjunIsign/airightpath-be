@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,6 +25,7 @@ import com.rightpath.dto.LoginRequest;
 import com.rightpath.dto.LoginResponse;
 import com.rightpath.dto.MessageResponse;
 import com.rightpath.dto.MeResponse;
+import com.rightpath.dto.PaginatedResponse;
 import com.rightpath.dto.UserInfo;
 import com.rightpath.dto.CreateStaffUserRequest;
 import com.rightpath.dto.UsersDto;
@@ -187,11 +189,27 @@ public class AuthenthicationController {
 	/**
 	 * Get all non-admin users (Admin only).
 	 */
+	/**
+	 * One page of candidate accounts — everyone holding no staff role.
+	 *
+	 * <p>Paginated and ordered by email. It used to return the whole table, and
+	 * the query behind it took MySQL out of sort memory (error 1038) on barely a
+	 * hundred rows; the fix is the {@code EXISTS} rewrite in the repository plus
+	 * this bound, not a larger sort buffer.</p>
+	 *
+	 * <p>{@code page} is zero-based and {@code size} defaults to
+	 * {@value com.rightpath.service.impl.UserDetailsServiceImpl#DEFAULT_PAGE_SIZE},
+	 * capped at {@value com.rightpath.service.impl.UserDetailsServiceImpl#MAX_PAGE_SIZE}
+	 * — the same convention as the paginated job listing.</p>
+	 */
 	@GetMapping("/users")
 	@PreAuthorize("hasAuthority('USER_LIST')")
-	public ResponseEntity<?> getAllNonAdminUsers() {
-		logger.info("Fetching non-admin users.");
-		return ResponseEntity.ok(userDetailsServiceImpl.getNonAdminUsers());
+	public ResponseEntity<PaginatedResponse<UsersDto>> getAllNonAdminUsers(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		Pageable pageable = UserDetailsServiceImpl.toPageable(page, size);
+		logger.info("Fetching candidate users page {} size {}", pageable.getPageNumber(), pageable.getPageSize());
+		return ResponseEntity.ok(new PaginatedResponse<>(userDetailsServiceImpl.getCandidateUsers(pageable)));
 	}
 
 	/**
@@ -202,11 +220,39 @@ public class AuthenthicationController {
 	 * {@code USER_LIST} authority as the candidate list: whoever may enumerate
 	 * accounts may enumerate all of them.</p>
 	 */
+	/**
+	 * One page of every account, optionally filtered by role and free text.
+	 *
+	 * <p>What the admin user screen reads. {@code /users} and {@code /users/staff}
+	 * keep their own meanings for existing callers; this is the combined,
+	 * paginated view, because two independent pagers cannot be merged into one
+	 * stable list.</p>
+	 *
+	 * @param role   ADMIN, SUPER_ADMIN or USER; omitted means every role
+	 * @param search matched against email and full name
+	 */
+	@GetMapping("/users/directory")
+	@PreAuthorize("hasAuthority('USER_LIST')")
+	public ResponseEntity<PaginatedResponse<UsersDto>> getUserDirectory(
+			@RequestParam(required = false) RoleName role,
+			@RequestParam(required = false) String search,
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		Pageable pageable = UserDetailsServiceImpl.toPageable(page, size);
+		logger.info("Fetching user directory role={} page={} size={}",
+				role, pageable.getPageNumber(), pageable.getPageSize());
+		return ResponseEntity.ok(
+				new PaginatedResponse<>(userDetailsServiceImpl.getDirectory(role, search, pageable)));
+	}
+
 	@GetMapping("/users/staff")
 	@PreAuthorize("hasAuthority('USER_LIST')")
-	public ResponseEntity<List<UsersDto>> getStaffUsers() {
-		logger.info("Fetching staff users.");
-		return ResponseEntity.ok(userDetailsServiceImpl.getStaffUsers());
+	public ResponseEntity<PaginatedResponse<UsersDto>> getStaffUsers(
+			@RequestParam(required = false) Integer page,
+			@RequestParam(required = false) Integer size) {
+		Pageable pageable = UserDetailsServiceImpl.toPageable(page, size);
+		logger.info("Fetching staff users page {} size {}", pageable.getPageNumber(), pageable.getPageSize());
+		return ResponseEntity.ok(new PaginatedResponse<>(userDetailsServiceImpl.getStaffUsersPage(pageable)));
 	}
 
 	/**
