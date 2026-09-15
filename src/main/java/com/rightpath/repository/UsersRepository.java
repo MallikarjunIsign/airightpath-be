@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.rightpath.dto.UsersDto;
 import com.rightpath.entity.Users;
 import com.rightpath.rbac.RoleName;
 
@@ -74,7 +75,10 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	 * @return the requested page, plus the total count
 	 */
 	@Query(value = """
-			SELECT u FROM Users u
+			SELECT new com.rightpath.dto.UsersDto(
+			    u.email, u.firstName, u.lastName, u.enabled,
+			    u.mobileNumber, u.alternativeMobileNumber)
+			FROM Users u
 			WHERE NOT EXISTS (
 			    SELECT ur.id FROM UserRole ur
 			    WHERE ur.user.email = u.email
@@ -89,7 +93,7 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 			      AND ur.active = true
 			      AND ur.role.name IN :roleNames)
 			""")
-	Page<Users> findPageExcludingActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames,
+	Page<UsersDto> findPageExcludingActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames,
 			Pageable pageable);
 
 	/**
@@ -106,7 +110,10 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	 * @return the requested page, plus the total count
 	 */
 	@Query(value = """
-			SELECT u FROM Users u
+			SELECT new com.rightpath.dto.UsersDto(
+			    u.email, u.firstName, u.lastName, u.enabled,
+			    u.mobileNumber, u.alternativeMobileNumber)
+			FROM Users u
 			WHERE EXISTS (
 			    SELECT ur.id FROM UserRole ur
 			    WHERE ur.user.email = u.email
@@ -121,7 +128,7 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 			      AND ur.active = true
 			      AND ur.role.name IN :roleNames)
 			""")
-	Page<Users> findPageByActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames, Pageable pageable);
+	Page<UsersDto> findPageByActiveRoleIn(@Param("roleNames") Collection<RoleName> roleNames, Pageable pageable);
 
 	/**
 	 * One page of the whole roster, optionally narrowed by a name/email search.
@@ -134,7 +141,10 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	 * @param search lower-cased {@code %term%}, or null for no text filter
 	 */
 	@Query(value = """
-			SELECT u FROM Users u
+			SELECT new com.rightpath.dto.UsersDto(
+			    u.email, u.firstName, u.lastName, u.enabled,
+			    u.mobileNumber, u.alternativeMobileNumber)
+			FROM Users u
 			WHERE (:search IS NULL
 			       OR LOWER(u.email) LIKE :search
 			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
@@ -145,7 +155,7 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 			       OR LOWER(u.email) LIKE :search
 			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
 			""")
-	Page<Users> findDirectory(@Param("search") String search, Pageable pageable);
+	Page<UsersDto> findDirectory(@Param("search") String search, Pageable pageable);
 
 	/**
 	 * One page of the roster holding a specific role, optionally searched.
@@ -155,7 +165,10 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 	 * sort of a joined result.</p>
 	 */
 	@Query(value = """
-			SELECT u FROM Users u
+			SELECT new com.rightpath.dto.UsersDto(
+			    u.email, u.firstName, u.lastName, u.enabled,
+			    u.mobileNumber, u.alternativeMobileNumber)
+			FROM Users u
 			WHERE EXISTS (
 			    SELECT ur.id FROM UserRole ur
 			    WHERE ur.user.email = u.email
@@ -176,7 +189,7 @@ public interface UsersRepository extends JpaRepository<Users, String> {
 			       OR LOWER(u.email) LIKE :search
 			       OR LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE :search)
 			""")
-	Page<Users> findDirectoryByRole(@Param("role") RoleName role, @Param("search") String search,
+	Page<UsersDto> findDirectoryByRole(@Param("role") RoleName role, @Param("search") String search,
 			Pageable pageable);
 
 	/**

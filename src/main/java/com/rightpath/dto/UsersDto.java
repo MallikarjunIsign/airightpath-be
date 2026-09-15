@@ -65,6 +65,28 @@ public class UsersDto {
 	 */
 	private List<String> roles;
 
+	/**
+	 * Projection constructor for list endpoints — the columns a roster shows.
+	 *
+	 * <p>Deliberately narrower than {@link #UsersDto(Users)}. Selecting entities
+	 * made every page read two columns nobody displays: the BCrypt hash, and
+	 * {@code profileImage}, a LONGBLOB that avatars are fetched from separately
+	 * one at a time. On a 25-row page that is 25 blobs off disk to render a table
+	 * of names.</p>
+	 *
+	 * <p>{@code roles} is filled in afterwards by a single batch query, so it is
+	 * not a parameter here.</p>
+	 */
+	public UsersDto(String email, String firstName, String lastName, Boolean enabled,
+			String mobileNumber, String alternativeMobileNumber) {
+		this.email = email;
+		this.firstName = firstName;
+		this.lastName = lastName;
+		this.enabled = enabled;
+		this.mobileNumber = mobileNumber;
+		this.alternativeMobileNumber = alternativeMobileNumber;
+	}
+
 	public UsersDto(Users users) {
 		this.email = users.getEmail();
 		this.firstName = users.getFirstName();

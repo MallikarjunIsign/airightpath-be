@@ -17,7 +17,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.rightpath.entity.Users;
+import com.rightpath.dto.UsersDto;
 import com.rightpath.rbac.RoleName;
 
 /**
@@ -59,11 +59,11 @@ class UserDirectoryTest {
     @Test
     void everyRoleFilteredRowReallyHoldsThatRole() {
         for (RoleName role : RoleName.values()) {
-            Page<Users> page = usersRepository.findDirectoryByRole(role, null, FIRST_PAGE);
+            Page<UsersDto> page = usersRepository.findDirectoryByRole(role, null, FIRST_PAGE);
             Set<String> expected = Set.copyOf(
                     usersRepository.findPageByActiveRoleIn(List.of(role), FIRST_PAGE)
-                            .getContent().stream().map(Users::getEmail).toList());
-            Set<String> actual = Set.copyOf(page.getContent().stream().map(Users::getEmail).toList());
+                            .getContent().stream().map(UsersDto::getEmail).toList());
+            Set<String> actual = Set.copyOf(page.getContent().stream().map(UsersDto::getEmail).toList());
             assertEquals(expected, actual, () -> "directory disagrees with the role query for " + role);
         }
     }
@@ -90,7 +90,7 @@ class UserDirectoryTest {
     @Test
     void pagesAreStableAcrossTheWholeRoster() {
         Pageable small = PageRequest.of(0, 3, EMAIL_ASC);
-        Page<Users> first = usersRepository.findDirectory(null, small);
+        Page<UsersDto> first = usersRepository.findDirectory(null, small);
 
         List<String> walked = new ArrayList<>();
         Pageable cursor = small;

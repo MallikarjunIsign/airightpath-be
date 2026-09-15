@@ -47,7 +47,7 @@ class StaffUserResponseTest {
                 List.of(RoleName.ADMIN, RoleName.SUPER_ADMIN),
                 PageRequest.of(0, 500, Sort.by(Sort.Direction.ASC, "email")))
                 .getContent().stream()
-                .map(user -> user.getEmail()).collect(Collectors.toSet());
+                .map(UsersDto::getEmail).collect(Collectors.toSet());
         assertEquals(expected, response.stream().map(UsersDto::getEmail).collect(Collectors.toSet()));
         assertEquals(expected.size(), response.size());
 

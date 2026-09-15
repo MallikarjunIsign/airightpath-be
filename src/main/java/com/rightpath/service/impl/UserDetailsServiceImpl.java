@@ -400,23 +400,23 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 				? null
 				: "%" + search.trim().toLowerCase() + "%";
 
-		Page<Users> page = (role == null)
+		Page<UsersDto> page = (role == null)
 				? userRepository.findDirectory(term, pageable)
 				: userRepository.findDirectoryByRole(role, term, pageable);
 		return toDtoPage(page, pageable);
 	}
 
 	/**
-	 * Converts a page of entities to DTOs, attaching roles in one query.
+	 * Attaches roles to a page the query already projected.
 	 *
-	 * <p>Not {@code page.map(...)}: that maps one element at a time, so building
-	 * each DTO's roles individually would cost a query per row — a page of 100
-	 * accounts turning into 100 round trips to fill one column. {@link #withRoles}
-	 * batches the whole page instead, and the total comes from the original page
-	 * so the count reflects the query, not the slice.</p>
+	 * <p>Not {@code page.map(...)}: that maps one element at a time, so filling
+	 * each row's roles individually would cost a query per row — a page of 100
+	 * accounts turning into 100 round trips for one column. {@link #attachRoles}
+	 * batches the whole page, and the total comes from the original page so the
+	 * count reflects the query rather than the slice.</p>
 	 */
-	private Page<UsersDto> toDtoPage(Page<Users> page, Pageable pageable) {
-		return new PageImpl<>(withRoles(page.getContent()), pageable, page.getTotalElements());
+	private Page<UsersDto> toDtoPage(Page<UsersDto> page, Pageable pageable) {
+		return new PageImpl<>(attachRoles(page.getContent()), pageable, page.getTotalElements());
 	}
 
 	/** The roles that make an account staff rather than a candidate. */
@@ -499,21 +499,25 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 	}
 
 	/**
-	 * Maps users to DTOs with their active roles attached.
+	 * Attaches each user's active roles to an already-projected page.
 	 *
-	 * <p>The roles come from a single batch query rather than one lookup per
-	 * user: a list that shows a role column would otherwise cost a query per
-	 * row, which is a query per candidate on a screen built to show hundreds.</p>
+	 * <p>Roles come from one batch query rather than a lookup per user: a role
+	 * column would otherwise cost a query per row, which is a query per candidate
+	 * on a screen built to show hundreds.</p>
 	 *
 	 * <p>Every user gets a list, empty where they hold no role — so a client can
-	 * distinguish "no roles" from "roles were never looked up", which stays null.</p>
+	 * tell "no roles" from "roles were never looked up", which stays null.</p>
+	 *
+	 * <p>Takes DTOs, not entities. The list queries project the six columns a
+	 * roster displays, which leaves the BCrypt hash and the LONGBLOB avatar
+	 * unread rather than read and then discarded.</p>
 	 */
-	private List<UsersDto> withRoles(List<Users> users) {
+	private List<UsersDto> attachRoles(List<UsersDto> users) {
 		if (users.isEmpty()) {
 			return List.of();
 		}
 
-		List<String> emails = users.stream().map(Users::getEmail).collect(Collectors.toList());
+		List<String> emails = users.stream().map(UsersDto::getEmail).collect(Collectors.toList());
 		// Null-safe on both halves of the pair. Neither column is nullable, so a
 		// null here means the data is already wrong — but Collectors.groupingBy
 		// throws on a null key, which would turn one bad assignment row into a
@@ -525,20 +529,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 						UserRoleName::userEmail,
 						Collectors.mapping(pair -> pair.role().name(), Collectors.toList())));
 
-		return users.stream().map(user -> {
-			UsersDto dto = new UsersDto(user);
-			dto.setRoles(rolesByEmail.getOrDefault(user.getEmail(), List.of()));
-			// Drop the avatar from list rows.
-			//
-			// UsersDto copies profileImage straight off the entity, and Jackson
-			// base64s it into every row: two accounts with photos came to 215 KB
-			// of JSON, and a real roster multiplies that by the page size. No
-			// client reads it from a list — avatars are fetched one at a time
-			// from /api/profile-image/{email} — so it is pure weight, and enough
-			// of it to exhaust a response or the heap.
-			dto.setProfileImage(null);
-			return dto;
-		}).collect(Collectors.toList());
+		users.forEach(user -> user.setRoles(rolesByEmail.getOrDefault(user.getEmail(), List.of())));
+		return users;
 	}
 
 	// Check if email is already registered

@@ -19,7 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.rightpath.entity.Users;
+import com.rightpath.dto.UsersDto;
 import com.rightpath.rbac.RoleName;
 
 /**
@@ -55,8 +55,8 @@ class StaffUserLookupTest {
     void bothQueriesRunWithoutExhaustingSortMemory() {
         // The regression guard. If the EXISTS rewrite is ever reverted to
         // NOT IN + DISTINCT, these two calls throw instead of returning.
-        Page<Users> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE);
-        Page<Users> candidates = usersRepository.findPageExcludingActiveRoleIn(STAFF, FIRST_PAGE);
+        Page<UsersDto> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE);
+        Page<UsersDto> candidates = usersRepository.findPageExcludingActiveRoleIn(STAFF, FIRST_PAGE);
 
         assertTrue(staff.getTotalElements() >= 0);
         assertTrue(candidates.getTotalElements() >= 0);
@@ -69,9 +69,9 @@ class StaffUserLookupTest {
 
     @Test
     void everyStaffUserActuallyHoldsAStaffRole() {
-        List<Users> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
+        List<UsersDto> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
 
-        for (Users user : staff) {
+        for (UsersDto user : staff) {
             Set<RoleName> held = userRoleRepository.findByUser_EmailAndActiveTrue(user.getEmail()).stream()
                     .map(assignment -> assignment.getRole().getName())
                     .collect(Collectors.toSet());
@@ -87,8 +87,8 @@ class StaffUserLookupTest {
         // what forced the fatal sort. EXISTS is a per-row predicate that cannot
         // duplicate the outer row — this is the assertion that lets DISTINCT
         // stay gone.
-        List<Users> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
-        Set<String> emails = staff.stream().map(Users::getEmail).collect(Collectors.toSet());
+        List<UsersDto> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
+        Set<String> emails = staff.stream().map(UsersDto::getEmail).collect(Collectors.toSet());
 
         assertEquals(emails.size(), staff.size(), "the staff list contains a duplicate");
     }
@@ -98,9 +98,9 @@ class StaffUserLookupTest {
         // The admin screen merges these two, so an account on both would be
         // administered from two places, and one on neither would be invisible.
         Set<String> staff = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE)
-                .getContent().stream().map(Users::getEmail).collect(Collectors.toSet());
+                .getContent().stream().map(UsersDto::getEmail).collect(Collectors.toSet());
         Set<String> candidates = usersRepository.findPageExcludingActiveRoleIn(STAFF, FIRST_PAGE)
-                .getContent().stream().map(Users::getEmail).collect(Collectors.toSet());
+                .getContent().stream().map(UsersDto::getEmail).collect(Collectors.toSet());
 
         Set<String> onBoth = staff.stream().filter(candidates::contains).collect(Collectors.toSet());
         assertTrue(onBoth.isEmpty(), () -> "accounts on both lists: " + onBoth);
@@ -115,7 +115,7 @@ class StaffUserLookupTest {
         // unordered paginated query returns one row twice and another never,
         // which only shows up once the pages are put back together.
         Pageable small = PageRequest.of(0, 2, EMAIL_ASC);
-        Page<Users> first = usersRepository.findPageExcludingActiveRoleIn(STAFF, small);
+        Page<UsersDto> first = usersRepository.findPageExcludingActiveRoleIn(STAFF, small);
 
         List<String> walked = new ArrayList<>();
         Pageable cursor = small;
@@ -137,8 +137,8 @@ class StaffUserLookupTest {
     void theCountQueryAgreesWithTheRowQuery() {
         // totalElements comes from a separate count query, so the two predicates
         // can drift apart and leave the pager claiming pages that do not exist.
-        Page<Users> onePerPage = usersRepository.findPageByActiveRoleIn(STAFF, PageRequest.of(0, 1, EMAIL_ASC));
-        List<Users> everyone = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
+        Page<UsersDto> onePerPage = usersRepository.findPageByActiveRoleIn(STAFF, PageRequest.of(0, 1, EMAIL_ASC));
+        List<UsersDto> everyone = usersRepository.findPageByActiveRoleIn(STAFF, FIRST_PAGE).getContent();
 
         assertEquals(everyone.size(), onePerPage.getTotalElements(),
                 "count query disagrees with the row query");
