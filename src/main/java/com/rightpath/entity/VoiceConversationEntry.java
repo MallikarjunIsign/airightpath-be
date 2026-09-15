@@ -57,6 +57,17 @@ public class VoiceConversationEntry {
     @Column(length = 20)
     private String codeLanguage;
 
+    /**
+     * Stdout/stderr from the candidate's last run of {@link #codeContent}.
+     *
+     * <p>Stored beside the source so a reviewer reading the transcript later can
+     * see whether the code ran, not just what was written — and so the evaluator
+     * grades the same evidence a human interviewer would have had. Null where
+     * the candidate never ran their code.</p>
+     */
+    @Column(columnDefinition = "TEXT")
+    private String codeOutput;
+
     @Builder.Default
     private LocalDateTime timestamp = LocalDateTime.now();
 

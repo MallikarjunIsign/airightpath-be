@@ -31,6 +31,7 @@ import com.rightpath.entity.VoiceConversationEntry;
 import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.CompletionReason;
 import com.rightpath.enums.ConversationRole;
+import com.rightpath.util.CodingAnswerFormatter;
 import com.rightpath.enums.InterviewResult;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
@@ -457,10 +458,12 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                         : 0;
                 ToneAnalysisService.ToneMetrics toneMetrics = toneAnalysisService.analyze(
                         request.getTranscript(), request.getWordTimestamps(), speechDuration);
-                String answerContent = request.getTranscript();
-                if (request.getCodeContent() != null && !request.getCodeContent().isBlank()) {
-                    answerContent += "\n\n[CODE (" + (request.getCodeLanguage() != null ? request.getCodeLanguage() : "text") + ")]\n" + request.getCodeContent();
-                }
+                // Rendered by the shared formatter, so the transcript the evaluator
+                // grades is exactly the text the interviewer reacted to — including
+                // whether the submitted code was ever run.
+                String answerContent = CodingAnswerFormatter.render(
+                        request.getTranscript(), request.getCodeContent(),
+                        request.getCodeLanguage(), request.getCodeOutput());
                 VoiceConversationEntry candidateEntry = VoiceConversationEntry.builder()
                         .interviewSchedule(s)
                         .role(ConversationRole.CANDIDATE)
@@ -472,6 +475,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                         .speechDurationSeconds(toneMetrics.getSpeechDurationSeconds())
                         .codeContent(request.getCodeContent())
                         .codeLanguage(request.getCodeLanguage())
+                        .codeOutput(request.getCodeOutput())
                         .build();
                 entryRepository.save(candidateEntry);
             }
@@ -493,7 +497,8 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                     false,
                     jobPrefix,
                     request.getCodeContent(),
-                    request.getCodeLanguage()
+                    request.getCodeLanguage(),
+                    request.getCodeOutput()
             );
             System.out.println("Sending response: " + result);
 

@@ -38,8 +38,23 @@ public interface InterviewService {
 
 	String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId);
 
+	/**
+	 * @deprecated superseded by the overload taking {@code codeOutput}; a coding
+	 *             answer graded without its run output is graded on source alone.
+	 */
+	@Deprecated
 	String answer(Long interviewScheduleId, String answerText, boolean finalAnswer, String jobPrefix,
 			String codeContent, String codeLanguage);
+
+	/**
+	 * Processes one candidate answer and returns the interviewer's next message.
+	 *
+	 * @param codeOutput what the candidate's code printed when they ran it, or
+	 *                   null if they never did. Passed on to the model so a
+	 *                   coding answer is judged on behaviour, not only on source.
+	 */
+	String answer(Long interviewScheduleId, String answerText, boolean finalAnswer, String jobPrefix,
+			String codeContent, String codeLanguage, String codeOutput);
 
 //	String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId, Long fromDate,
 //			Long toDate);

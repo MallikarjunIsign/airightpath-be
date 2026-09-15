@@ -165,12 +165,26 @@ public class InterviewServiceImpl implements InterviewService {
 //	}
 	
 	@Override
+	@Deprecated
 	public String answer(Long interviewScheduleId,
 	                     String answerText,
 	                     boolean finalAnswer,
 	                     String jobPrefix,
 	                     String codeContent,
 	                     String codeLanguage) {
+	    // Kept for callers that predate run-output capture. Treated as "the
+	    // candidate never ran their code", which is what the absence means.
+	    return answer(interviewScheduleId, answerText, finalAnswer, jobPrefix, codeContent, codeLanguage, null);
+	}
+
+	@Override
+	public String answer(Long interviewScheduleId,
+	                     String answerText,
+	                     boolean finalAnswer,
+	                     String jobPrefix,
+	                     String codeContent,
+	                     String codeLanguage,
+	                     String codeOutput) {
 
 	    InterviewSession session = getSession(interviewScheduleId);
 	    List<InterviewQuestionInfo> questions = session.getQuestions();
