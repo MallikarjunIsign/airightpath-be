@@ -52,6 +52,27 @@ public class StatusTransitionValidator {
      * @param targetStatus  the desired next status
      * @throws IllegalStateException if the transition is not allowed
      */
+    /**
+     * Whether a transition is allowed, without throwing.
+     *
+     * <p>For steps that should happen when the pipeline is ready for them and be
+     * skipped otherwise. Scheduling an interview is the case in point: it must
+     * advance a candidate who has finished their exam, and must not fail for one
+     * whose interview is being re-scheduled, since
+     * {@code INTERVIEW_SCHEDULED → INTERVIEW_SCHEDULED} is not a legal move.</p>
+     *
+     * <p>Shares {@link #validate} rather than re-reading the table, so the two
+     * can never disagree about what is allowed.</p>
+     */
+    public static boolean isAllowed(ApplicationStatus currentStatus, ApplicationStatus targetStatus) {
+        try {
+            validate(currentStatus, targetStatus);
+            return true;
+        } catch (IllegalStateException notAllowed) {
+            return false;
+        }
+    }
+
     public static void validate(ApplicationStatus currentStatus, ApplicationStatus targetStatus) {
         if (currentStatus == null) {
             throw new IllegalStateException("Current status is missing. Cannot transition to " + targetStatus + ".");

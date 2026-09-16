@@ -338,6 +338,22 @@ public class InterviewServiceImpl implements InterviewService {
 	                .orElseThrow(() -> new ResourceNotFoundException("Application not found for " + email));
 
 	        application.setInterview("Scheduled");
+
+	        // Advance the pipeline, not just the free-text column.
+	        //
+	        // Scheduling an interview used to set `interview = "Scheduled"` and
+	        // leave `status` on EXAM_COMPLETED, so the candidate sat in the exam
+	        // stage forever while a second field claimed otherwise — and every
+	        // screen that reads status showed them as not yet progressed.
+	        //
+	        // Guarded rather than validated: re-scheduling an interview is a
+	        // normal thing to do, and INTERVIEW_SCHEDULED → INTERVIEW_SCHEDULED is
+	        // not a legal move, so throwing here would make the second attempt
+	        // fail and create no schedule at all.
+	        if (StatusTransitionValidator.isAllowed(application.getStatus(), ApplicationStatus.INTERVIEW_SCHEDULED)) {
+	            application.setStatus(ApplicationStatus.INTERVIEW_SCHEDULED);
+	        }
+
 	        jobAppRepo.save(application);
 	        applicationsByEmail.put(email, application);
 
