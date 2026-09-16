@@ -24,6 +24,7 @@ import com.rightpath.dto.AssignInterviewBulkDTO;
 import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.CandidateInterviewScheduleDTO;
 import com.rightpath.dto.InterviewStatsDTO;
+import com.rightpath.enums.InterviewRound;
 import com.rightpath.dto.StartInterviewRequest;
 import com.rightpath.dto.StartInterviewResponse;
 import com.rightpath.dto.voice.ResumeResponse;
@@ -106,10 +107,16 @@ public class InterviewController {
 	    return ResponseEntity.ok(results);
 	}
 
+	/**
+	 * @param round optional round filter; omit for all rounds. An unrecognised
+	 *              value is a 400 rather than a silent "all rounds", so a typo in
+	 *              a caller shows up as an error instead of wrong-looking data.
+	 */
 	@GetMapping("/results")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
-	public ResponseEntity<?> getResults(@RequestParam(required = false) String jobPrefix) {
-		List<CandidateInterviewSchedule> results = interviewService.getResults(jobPrefix);
+	public ResponseEntity<?> getResults(@RequestParam(required = false) String jobPrefix,
+			@RequestParam(required = false) InterviewRound round) {
+		List<CandidateInterviewSchedule> results = interviewService.getResults(jobPrefix, round);
 		List<CandidateInterviewScheduleDTO> dtoList = results.stream()
 				.map(CandidateInterviewScheduleDTO::new).toList();
 		return ResponseEntity.ok(dtoList);
@@ -241,8 +248,11 @@ public class InterviewController {
 	// Item 16: Get interview stats
 	@GetMapping("/stats")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
-	public ResponseEntity<InterviewStatsDTO> getInterviewStats(@RequestParam(required = false) String jobPrefix) {
-		List<CandidateInterviewSchedule> all = interviewService.getResults(jobPrefix);
+	public ResponseEntity<InterviewStatsDTO> getInterviewStats(@RequestParam(required = false) String jobPrefix,
+			@RequestParam(required = false) InterviewRound round) {
+		// Same call the results list makes, so the summary cards can never
+		// describe a different set of interviews than the table under them.
+		List<CandidateInterviewSchedule> all = interviewService.getResults(jobPrefix, round);
 
 		long total = all.size();
 		long completed = all.stream().filter(s -> s.getAttemptStatus() == AttemptStatus.COMPLETED).count();

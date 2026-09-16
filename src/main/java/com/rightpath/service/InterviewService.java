@@ -32,7 +32,26 @@ public interface InterviewService {
 	void markCompleted(Long interviewScheduleId, AttemptStatus attemptStatus, InterviewResult interviewResult,
 			String summaryRef);
 
+	/**
+	 * Every interview on a job, or every interview there is when no job is given.
+	 *
+	 * @deprecated retained for callers that genuinely want all rounds; prefer the
+	 *             overload, which makes the round explicit rather than implied.
+	 */
+	@Deprecated
 	List<CandidateInterviewSchedule> getResults(String jobPrefix);
+
+	/**
+	 * Interviews on a job, optionally narrowed to one round.
+	 *
+	 * <p>Matching is on the <em>effective</em> round, so schedules written before
+	 * the column existed count as {@link com.rightpath.enums.InterviewRound#DEFAULT}
+	 * — the same reading the DTO reports. Filtering on the stored column instead
+	 * would make historic interviews vanish from both rounds.</p>
+	 *
+	 * @param round the round to keep, or null for all rounds
+	 */
+	List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round);
 
 	CandidateInterviewSchedule getResultDetail(Long id);
 

@@ -486,11 +486,26 @@ public class InterviewServiceImpl implements InterviewService {
 	}
 
 	@Override
+	@Deprecated
 	public List<CandidateInterviewSchedule> getResults(String jobPrefix) {
-		if (jobPrefix != null && !jobPrefix.isBlank()) {
-			return scheduleRepo.findAllByJobPrefix(jobPrefix);
+		return getResults(jobPrefix, null);
+	}
+
+	@Override
+	public List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round) {
+		List<CandidateInterviewSchedule> all = (jobPrefix != null && !jobPrefix.isBlank())
+				? scheduleRepo.findAllByJobPrefix(jobPrefix)
+				: scheduleRepo.findAll();
+
+		if (round == null) {
+			return all;
 		}
-		return scheduleRepo.findAll();
+		// getEffectiveRound(), not getRound(): a null column reads as the default
+		// round, so pre-rounds interviews stay visible under L2 instead of
+		// disappearing from every filter.
+		return all.stream()
+				.filter(schedule -> schedule.getEffectiveRound() == round)
+				.toList();
 	}
 
 	@Override
