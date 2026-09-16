@@ -12,13 +12,24 @@ public class EvaluationCategoryFormatter {
 
     private final EvaluationCategoryRepository evaluationCategoryRepository;
 
-    // Default categories used when none are configured for a job
+    // Default categories used when none are configured for a job.
+    //
+    // Weights total 100. Programming and Logical Reasoning are scored in their
+    // own right rather than folded into Technical Skills: the transcript now
+    // carries the code the candidate wrote and what it printed when they ran
+    // it, so how they write code is visible evidence and no longer a guess from
+    // how they talk about it. A job can replace all of this from
+    // /api/prompts/evaluation-categories.
     private static final List<DefaultCategory> DEFAULTS = List.of(
-            new DefaultCategory("Technical Skills", 30, "Core technical knowledge and expertise"),
-            new DefaultCategory("Communication", 20, "Clarity and effectiveness of communication"),
-            new DefaultCategory("Problem Solving", 20, "Analytical thinking and approach to problems"),
-            new DefaultCategory("Behavioral & Culture Fit", 15, "Values alignment and teamwork"),
-            new DefaultCategory("Articulation & Confidence", 15, "Confidence, poise, and delivery")
+            new DefaultCategory("Technical Skills", 22, "Core technical knowledge and expertise"),
+            new DefaultCategory("Programming", 18,
+                    "Correctness, structure and quality of the code written during the interview"),
+            new DefaultCategory("Logical Reasoning", 15,
+                    "Sound reasoning, and whether conclusions follow from what was said"),
+            new DefaultCategory("Communication", 15, "Clarity and effectiveness of communication"),
+            new DefaultCategory("Problem Solving", 12, "Analytical thinking and approach to problems"),
+            new DefaultCategory("Behavioral & Culture Fit", 10, "Values alignment and teamwork"),
+            new DefaultCategory("Articulation & Confidence", 8, "Confidence, poise, and delivery")
     );
 
     public EvaluationCategoryFormatter(EvaluationCategoryRepository evaluationCategoryRepository) {

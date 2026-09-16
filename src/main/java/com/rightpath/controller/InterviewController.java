@@ -24,6 +24,7 @@ import com.rightpath.dto.AssignInterviewBulkDTO;
 import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.CandidateInterviewScheduleDTO;
 import com.rightpath.dto.InterviewStatsDTO;
+import com.rightpath.dto.voice.VoiceConversationEntryDTO;
 import com.rightpath.enums.InterviewRound;
 import com.rightpath.dto.StartInterviewRequest;
 import com.rightpath.dto.StartInterviewResponse;
@@ -239,10 +240,22 @@ public class InterviewController {
 	}
 
 	// Item 16: Get full conversation transcript for a schedule
+	/**
+	 * The full transcript of one interview, oldest turn first.
+	 *
+	 * <p>Projected rather than returned as entities: the entry's schedule is a
+	 * lazy relation, and serialising it outside a transaction answered 500 for
+	 * every interview — see {@link VoiceConversationEntryDTO}.</p>
+	 */
 	@GetMapping("/{scheduleId}/conversation")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
-	public ResponseEntity<List<VoiceConversationEntry>> getConversation(@PathVariable Long scheduleId) {
-		return ResponseEntity.ok(voiceConversationEntryRepository.findByInterviewScheduleIdOrderByTimestampAsc(scheduleId));
+	public ResponseEntity<List<VoiceConversationEntryDTO>> getConversation(@PathVariable Long scheduleId) {
+		List<VoiceConversationEntryDTO> transcript = voiceConversationEntryRepository
+				.findByInterviewScheduleIdOrderByTimestampAsc(scheduleId)
+				.stream()
+				.map(VoiceConversationEntryDTO::from)
+				.toList();
+		return ResponseEntity.ok(transcript);
 	}
 
 	// Item 16: Get interview stats

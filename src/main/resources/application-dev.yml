@@ -190,6 +190,13 @@ interview:
   max-duration-minutes: 60
   max-warnings: 5
   context-window-size: 4
+  # How many questions a dynamic interview asks. The model writes every question
+  # from the conversation so far, so it needs a floor (enough signal to score on)
+  # and a ceiling (it cannot run forever). Below the floor it is told to keep
+  # going; at the ceiling the interview is closed whether it asked to or not.
+  questions:
+    min: 10
+    max: 20
   early-termination:
     min-questions: 4
     skip-ratio-threshold: 0.5

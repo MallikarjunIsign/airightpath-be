@@ -198,6 +198,24 @@ interview:
   max-duration-minutes: 60
   max-warnings: 5
   context-window-size: 4
+  # How many questions a dynamic interview asks. The model writes every question
+  # from the conversation so far, so it needs a floor (enough signal to score
+  # on) and a ceiling (it cannot run forever). Below the floor it is told to
+  # keep going; at the ceiling the interview is closed whether it asked to or
+  # not. Stated in every profile, not just dev: these are product behaviour, and
+  # a value tuned here that is missing from a deployed profile silently falls
+  # back to the compiled default instead.
+  questions:
+    min: 10
+    max: 20
+  # When an interview is cut short for poor performance.
+  early-termination:
+    min-questions: 4
+    skip-ratio-threshold: 0.5
+    min-avg-word-count: 15
+    min-confidence-score: 30.0
+    consecutive-skip-threshold: 2
+    consecutive-short-answer-threshold: 3
 
 # Swagger / OpenAPI - DISABLED in production
 # (OpenApiConfig is also excluded in prod via @Profile("!prod"))

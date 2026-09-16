@@ -37,6 +37,7 @@ import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.VoiceConversationEntryRepository;
 import com.rightpath.service.CandidatePerformanceAnalyzer;
+import com.rightpath.service.InterviewConductPolicy;
 import com.rightpath.service.InterviewContextService;
 import com.rightpath.service.InterviewEvaluationService;
 import com.rightpath.service.InterviewService;
@@ -80,6 +81,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     private final CandidatePerformanceAnalyzer performanceAnalyzer;
     private final SimpMessagingTemplate messagingTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final InterviewConductPolicy conductPolicy;
 
     @Value("${interview.max-warnings:5}")
     private int maxWarnings;
@@ -97,7 +99,8 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
             InterviewEvaluationService evaluationService,
             CandidatePerformanceAnalyzer performanceAnalyzer,
             SimpMessagingTemplate messagingTemplate,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            InterviewConductPolicy conductPolicy) {
         this.scheduleRepo = scheduleRepo;
         this.entryRepository = entryRepository;
         this.openAiStreamingService = openAiStreamingService;
@@ -108,6 +111,32 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         this.performanceAnalyzer = performanceAnalyzer;
         this.messagingTemplate = messagingTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.conductPolicy = conductPolicy;
+    }
+
+    /** The fixed greeting that opens every interview. */
+    private String buildWelcome(CandidateInterviewSchedule schedule) {
+        String interviewer = schedule.getInterviewerName();
+        return "Hello, and welcome. I'm " + (interviewer == null || interviewer.isBlank() ? "your interviewer" : interviewer)
+                + ", and I'll be taking your interview today. Answer in your own words, and take a moment to think"
+                + " before you speak if you need to. Let's begin.";
+    }
+
+    /**
+     * Greeting followed by the first question, with any type tag kept in front.
+     *
+     * <p>The tag has to lead the message: the frontend opens the code editor
+     * from it, and a {@code [CODING]} buried after the greeting is text the
+     * candidate reads rather than a signal the client acts on.</p>
+     */
+    private String mergeWelcomeWithQuestion(String welcome, String question) {
+        java.util.regex.Matcher tag = QUESTION_TYPE_TAG_PATTERN.matcher(question);
+        if (tag.find()) {
+            String marker = tag.group().trim();
+            String withoutTag = question.substring(0, tag.start()) + question.substring(tag.end());
+            return marker + " " + welcome + "\n\n" + withoutTag.trim();
+        }
+        return welcome + "\n\n" + question;
     }
 
     /**
@@ -186,9 +215,36 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         CandidateInterviewSchedule schedule = scheduleRepo.findFirstByJobPrefixAndEmailOrderByAssignedAtDesc(jobPrefix, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Interview schedule not found for " + jobPrefix + " / " + email));
 
-        // Resume existing interview if already IN_PROGRESS
+        // Resume, rather than silently restart.
+        //
+        // This branch was an empty placeholder, so an interview already under
+        // way fell through to the code below: the question count went back to
+        // zero while the turns already recorded stayed where they were. The
+        // model was then handed a transcript of the earlier attempt and opened
+        // with "let's start again", and the budget no longer matched the
+        // record — 20 more questions on top of however many had been asked.
+        //
+        // Resuming hands back the question they were on and leaves the
+        // transcript and the count exactly as they are.
         if (schedule.getAttemptStatus() == AttemptStatus.IN_PROGRESS) {
-            // ... resume logic unchanged ...
+            log.info("Resuming interview {} for {}", schedule.getId(), email);
+
+            String lastQuestion = entryRepository
+                    .findByInterviewScheduleIdOrderByTimestampAsc(schedule.getId())
+                    .stream()
+                    .filter(entry -> entry.getRole() == ConversationRole.INTERVIEWER)
+                    .reduce((first, second) -> second)
+                    .map(VoiceConversationEntry::getContent)
+                    .orElse("Welcome back. Let's carry on where we left off.");
+
+            return VoiceStartResponse.builder()
+                    .scheduleId(schedule.getId())
+                    .firstQuestion(lastQuestion)
+                    .interviewerName(schedule.getInterviewerName())
+                    .firstQuestionAudio(isCodeExplanation(lastQuestion)
+                            ? null
+                            : textToSpeechService.generateTTSBase64(stripQuestionTypeTags(lastQuestion)))
+                    .build();
         }
 
         // Start a new interview
@@ -206,8 +262,25 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         
         schedule = scheduleRepo.save(schedule);
 
-        // ✅ Call the method WITHOUT fromDate/toDate parameters (it will read from schedule)
-        String firstQuestionRaw = interviewService.prepareQuestionsAndCreateSession(jobPrefix, email, schedule.getId());
+        // The first question is generated, not read from a list.
+        //
+        // This used to call prepareQuestionsAndCreateSession, which loaded an
+        // uploaded question file and walked it by index for the whole interview
+        // — so every candidate on a job got the same questions in the same
+        // order, and a job with no file uploaded could not interview at all.
+        // The model now writes each question from the conversation so far,
+        // through the same context path every later turn uses.
+        String generatedQuestion = openAiStreamingService.chatCompletion(
+                contextService.buildContextMessages(schedule, contextService.buildFirstQuestionPrompt()));
+        if (generatedQuestion == null || generatedQuestion.isBlank()) {
+            throw new IllegalStateException(
+                    "The interviewer could not be reached to start this interview. Please try again.");
+        }
+
+        // The greeting is the one fixed line in the interview. Merged into the
+        // first message so the candidate hears it before the question, rather
+        // than being greeted by a question.
+        String firstQuestionRaw = mergeWelcomeWithQuestion(buildWelcome(schedule), generatedQuestion.trim());
         String firstQuestionClean = stripQuestionTypeTags(firstQuestionRaw);
         
       
@@ -490,77 +563,76 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         // --- Phase 2: Use InterviewService.answer ---
      // --- Phase 2: Use InterviewService.answer ---
         try {
-            String jobPrefix = schedule.getJobPrefix();
-            String result = interviewService.answer(
-                    scheduleId,
+            // Reloaded so the answer just saved is part of the conversation the
+            // model is about to read, and so the question count is current.
+            CandidateInterviewSchedule current = scheduleRepo.findById(scheduleId).orElseThrow();
+
+            // Every turn goes to the model with the conversation so far — the
+            // spoken answer, and any code with its output, exactly as stored.
+            // The reply reacts to that answer and asks what comes next, so the
+            // interview follows the candidate rather than a fixed list.
+            String turnPrompt = contextService.buildNextQuestionPrompt(
+                    current,
                     skipped ? "" : request.getTranscript(),
-                    false,
-                    jobPrefix,
+                    skipped,
                     request.getCodeContent(),
-                    request.getCodeLanguage(),
-                    request.getCodeOutput()
-            );
-            System.out.println("Sending response: " + result);
+                    request.getCodeLanguage());
+            String reply = openAiStreamingService.chatCompletion(
+                    contextService.buildContextMessages(current, turnPrompt));
 
-            // 1. Handle RETRY message (language warning) – do not complete the interview
-            if (result.startsWith("RETRY:")) {
-                sendResponseComplete(scheduleId, result, false);
-                // No further actions – schedule remains IN_PROGRESS
+            if (reply == null || reply.isBlank()) {
+                log.error("Empty reply from the model for schedule {}", scheduleId);
+                sendResponseComplete(scheduleId,
+                        "Sorry, I did not catch that. Could you answer again?", false);
                 return;
             }
 
-            // 2. Handle normal FEEDBACK + NEXT QUESTION
-            if (result.startsWith("FEEDBACK:")) {
-                // Parse feedback and next question
-                String[] parts = result.split("NEXT QUESTION:", 2);
-                if (parts.length == 2) {
-                    String feedback = parts[0].replace("FEEDBACK:", "").trim();
-                    String nextQuestion = parts[1].trim();
+            // Closes when the model says it is done, or when the budget is
+            // spent. The ceiling is enforced here rather than trusted to the
+            // prompt: an interview that never ends is worse than one cut short.
+            boolean finished = conductPolicy.isClosing(reply)
+                    || conductPolicy.hasReachedCeiling(current.getTotalQuestionsAsked());
+            String spoken = conductPolicy.stripCompletionMarker(reply);
 
-                    // Save interviewer's next question to DB
-                    transactionTemplate.execute(status -> {
-                        CandidateInterviewSchedule s = scheduleRepo.findById(scheduleId).orElseThrow();
-                        VoiceConversationEntry entry = VoiceConversationEntry.builder()
-                                .interviewSchedule(s)
-                                .role(ConversationRole.INTERVIEWER)
-                                .content(nextQuestion)
-                                .build();
-                        entryRepository.save(entry);
-                        s.incrementQuestionsAsked();
-                        scheduleRepo.save(s);
-                        return null;
-                    });
-
-                    // Generate TTS for the next question
-                    String cleanNextQuestion = stripQuestionTypeTags(nextQuestion);
-                    if (!isCodeExplanation(nextQuestion)) {
-                        textToSpeechService.generateAndStreamTTS(scheduleId, cleanNextQuestion);
-                    }
-
-                    // Send the response to frontend
-                    sendResponseComplete(scheduleId, result, false);
-                } else {
-                    // Malformed FEEDBACK message – just send error
-//                    sendResponseCompleteError(scheduleId);
-                }
-                return;
-            }
-
-            // 3. Final summary – interview is complete
             transactionTemplate.execute(status -> {
                 CandidateInterviewSchedule s = scheduleRepo.findById(scheduleId).orElseThrow();
-                s.setAttemptStatus(AttemptStatus.COMPLETED);
-                s.setEndedAt(LocalDateTime.now());
+                entryRepository.save(VoiceConversationEntry.builder()
+                        .interviewSchedule(s)
+                        .role(ConversationRole.INTERVIEWER)
+                        .content(spoken)
+                        .build());
+                if (finished) {
+                    s.setAttemptStatus(AttemptStatus.COMPLETED);
+                    s.setEndedAt(LocalDateTime.now());
+                } else {
+                    // Only a question spends budget; a closing remark is not one.
+                    s.incrementQuestionsAsked();
+                }
                 scheduleRepo.save(s);
                 return null;
             });
-            sendResponseComplete(scheduleId, result, true);
-            textToSpeechService.generateAndStreamTTS(scheduleId, result);
-            evaluationService.triggerEvaluationAsync(scheduleId);
+
+            sendResponseComplete(scheduleId, spoken, finished);
+
+            if (!isCodeExplanation(spoken)) {
+                textToSpeechService.generateAndStreamTTS(scheduleId, stripQuestionTypeTags(spoken));
+            }
+
+            if (finished) {
+                // Scores the whole transcript, code and all.
+                evaluationService.triggerEvaluationAsync(scheduleId);
+            } else {
+                // Keeps the rolling summary in step, so context that drops out
+                // of the verbatim window is not simply lost.
+                contextService.updateRunningSummary(
+                        scheduleRepo.findById(scheduleId).orElseThrow());
+            }
 
         } catch (Exception e) {
-            log.error("Error processing answer via InterviewService for schedule {}: {}", scheduleId, e.getMessage(), e);
-//            sendResponseCompleteError(scheduleId);
+            log.error("Error generating the next interview turn for schedule {}: {}",
+                    scheduleId, e.getMessage(), e);
+            sendResponseComplete(scheduleId,
+                    "Sorry, something went wrong on my end. Could you answer again?", false);
         }
     }
     @Override

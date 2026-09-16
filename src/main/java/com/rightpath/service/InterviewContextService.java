@@ -28,6 +28,7 @@ public class InterviewContextService {
     private final JobPromptService jobPromptService;
     private final PromptPlaceholderResolver placeholderResolver;
     private final CandidatePerformanceAnalyzer performanceAnalyzer;
+    private final InterviewConductPolicy conductPolicy;
 
     @Value("${interview.context-window-size:4}")
     private int contextWindowSize;
@@ -36,12 +37,14 @@ public class InterviewContextService {
                                    OpenAiStreamingService openAiStreamingService,
                                    JobPromptService jobPromptService,
                                    PromptPlaceholderResolver placeholderResolver,
-                                   CandidatePerformanceAnalyzer performanceAnalyzer) {
+                                   CandidatePerformanceAnalyzer performanceAnalyzer,
+                                   InterviewConductPolicy conductPolicy) {
         this.entryRepository = entryRepository;
         this.openAiStreamingService = openAiStreamingService;
         this.jobPromptService = jobPromptService;
         this.placeholderResolver = placeholderResolver;
         this.performanceAnalyzer = performanceAnalyzer;
+        this.conductPolicy = conductPolicy;
     }
 
     /**
@@ -53,6 +56,13 @@ public class InterviewContextService {
 
         // System prompt from DB
         messages.add(Map.of("role", "system", "content", buildSystemPrompt(schedule)));
+
+        // The non-negotiable rules, and how much of the question budget is left.
+        // After the job's prompt, so they override it, and on every call rather
+        // than only the first: the rolling context window below means an early
+        // instruction can fall out of the conversation the model still sees.
+        messages.add(Map.of("role", "system", "content",
+                conductPolicy.asSystemMessage(schedule.getTotalQuestionsAsked())));
 
         // Add running summary if exists
         if (schedule.getRunningSummary() != null && !schedule.getRunningSummary().isBlank()) {
