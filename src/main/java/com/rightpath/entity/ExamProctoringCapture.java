@@ -34,11 +34,21 @@ import lombok.Setter;
 @Entity
 @Table(
         name = "exam_proctoring_capture",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_proctoring_capture_slot",
-                columnNames = {"assessment_id", "capture_type", "frame_index"}),
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_proctoring_capture_slot",
+                        columnNames = {"assessment_id", "capture_type", "frame_index"}),
+                // Interviews need their own slot constraint. MySQL treats NULLs
+                // as distinct in a unique index, so interview rows — which leave
+                // assessment_id null — are not constrained by the one above at
+                // all, and would accumulate a new identity photo per re-capture.
+                @UniqueConstraint(
+                        name = "uk_proctoring_capture_interview_slot",
+                        columnNames = {"interview_schedule_id", "capture_type", "frame_index"})
+        },
         indexes = {
                 @Index(name = "idx_proctoring_capture_assessment", columnList = "assessment_id"),
+                @Index(name = "idx_proctoring_capture_interview", columnList = "interview_schedule_id"),
                 @Index(name = "idx_proctoring_capture_candidate", columnList = "candidate_email")
         })
 @Getter
@@ -52,9 +62,21 @@ public class ExamProctoringCapture {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** The assessment attempt this capture belongs to. */
-    @Column(name = "assessment_id", nullable = false)
+    /**
+     * The assessment attempt this capture belongs to, or null for an interview.
+     *
+     * <p>Nullable since interviews began capturing too: exactly one of this and
+     * {@link #interviewScheduleId} is set. They are separate id sequences, so
+     * storing a schedule id here would make assessment 42 and interview 42
+     * indistinguishable — and a reviewer could be shown the wrong candidate's
+     * photo.</p>
+     */
+    @Column(name = "assessment_id")
     private Long assessmentId;
+
+    /** The interview schedule this capture belongs to, or null for an exam. */
+    @Column(name = "interview_schedule_id")
+    private Long interviewScheduleId;
 
     /** The candidate who was logged in at capture time. */
     @Column(name = "candidate_email", nullable = false)

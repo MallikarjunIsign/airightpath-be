@@ -82,6 +82,31 @@ public class JobPromptServiceImpl implements JobPromptService {
 	}
 
 	@Override
+	public String getInterviewPrompt(String jobPrefix, com.rightpath.enums.InterviewRound round, PromptStage stage) {
+		com.rightpath.enums.InterviewRound resolved = com.rightpath.enums.InterviewRound.orDefault(round);
+
+		// The round's own prompt wins where one is configured.
+		var roundPrompt = jobPromptRepository.findByJobPrefixAndPromptTypeAndPromptStage(
+				jobPrefix, resolved.getPromptType(), stage);
+		if (roundPrompt.isPresent()) {
+			return roundPrompt.get().getPrompt();
+		}
+
+		// Otherwise the round-agnostic prompt, which is all a job configured
+		// before rounds existed has. Reached through getPrompt so the
+		// properties-file fallback for INTERVIEW/START still applies.
+		try {
+			return getPrompt(jobPrefix, PromptType.INTERVIEW, stage);
+		} catch (IllegalStateException noPromptConfigured) {
+			// Only SUMMARY reaches here — START always has a built-in fallback.
+			// Callers treat null as "grade with the built-in criteria only",
+			// which is what happened before rounds existed too.
+			log.debug("No {} interview prompt for jobPrefix={} round={}", stage, jobPrefix, resolved);
+			return null;
+		}
+	}
+
+	@Override
 	public String buildStartPrompt(String jobPrefix, String resumeSummary) {
 		String template = getPrompt(jobPrefix, PromptType.INTERVIEW, PromptStage.START);
 		return template.replace("{{resumeSummary}}", resumeSummary == null ? "" : resumeSummary);

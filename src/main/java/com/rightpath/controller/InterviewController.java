@@ -95,7 +95,8 @@ public class InterviewController {
 	            dto.getDeadlineTime(),
 	            dto.isSendEmail(),
 	            dto.getQuestionsFromDate(),  // LocalDate
-	            dto.getQuestionsToDate()     // LocalDate
+	            dto.getQuestionsToDate(),    // LocalDate
+	            dto.getRound()
 	    );
 
 	    List<CandidateInterviewScheduleDTO> results = schedules.stream()

@@ -69,8 +69,25 @@ public interface InterviewService {
 	  CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
 	            LocalDateTime deadlineTime, LocalDate questionsFromDate, LocalDate questionsToDate);
 	    
+	    /**
+	     * @deprecated superseded by the overload taking an
+	     *             {@link com.rightpath.enums.InterviewRound}; this one books
+	     *             the default round.
+	     */
+	    @Deprecated
 	    List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
 	            LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
 	            LocalDate questionsFromDate, LocalDate questionsToDate);
+
+	    /**
+	     * Books one interview round for each of the given candidates.
+	     *
+	     * @param round which interview to book; null means the default round, so a
+	     *              caller written before rounds existed keeps its old behaviour
+	     */
+	    List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
+	            LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
+	            LocalDate questionsFromDate, LocalDate questionsToDate,
+	            com.rightpath.enums.InterviewRound round);
 
 }

@@ -319,9 +319,19 @@ public class InterviewServiceImpl implements InterviewService {
 	}
 
 	@Override
+	@Deprecated
 	public List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
 	        LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
 	        LocalDate questionsFromDate, LocalDate questionsToDate) {
+	    return assignInterviewBulk(jobPrefix, emails, assignedAt, deadlineTime, sendEmail,
+	            questionsFromDate, questionsToDate, null);
+	}
+
+	@Override
+	public List<CandidateInterviewSchedule> assignInterviewBulk(String jobPrefix, List<String> emails,
+	        LocalDateTime assignedAt, LocalDateTime deadlineTime, boolean sendEmail,
+	        LocalDate questionsFromDate, LocalDate questionsToDate,
+	        com.rightpath.enums.InterviewRound round) {
 
 	    if (emails == null || emails.isEmpty()) {
 	        throw new IllegalArgumentException("emails must be provided");
@@ -366,6 +376,10 @@ public class InterviewServiceImpl implements InterviewService {
 	                .deadlineTime(deadlineTime)
 	                .questionsFromDate(questionsFromDate != null ? questionsFromDate.atStartOfDay() : null)
 	                .questionsToDate(questionsToDate != null ? questionsToDate.atTime(23, 59, 59) : null)
+	                // Normalised rather than stored as null, so a schedule created
+	                // now always says which interview it is. Only rows predating
+	                // the column read as null.
+	                .round(com.rightpath.enums.InterviewRound.orDefault(round))
 	                .build();
 
 	        schedules.add(schedule);

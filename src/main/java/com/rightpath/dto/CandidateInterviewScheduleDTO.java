@@ -30,7 +30,21 @@ public class CandidateInterviewScheduleDTO {
 	   private LocalDate questionsFromDate;
 	    private LocalDate questionsToDate;
 
+	/**
+	 * Which interview this was — {@code L2_TECHNICAL} or {@code L3_BEHAVIORAL}.
+	 *
+	 * <p>Always populated, including for schedules written before the column
+	 * existed: those read as the default round rather than null, so a results
+	 * screen filtering by round does not hide historic interviews.</p>
+	 */
+	private String round;
+
+	/** Human label for the round, so clients need not map the enum. */
+	private String roundLabel;
+
 	public CandidateInterviewScheduleDTO(CandidateInterviewSchedule entity) {
+		this.round = entity.getEffectiveRound().name();
+		this.roundLabel = entity.getEffectiveRound().getDisplayName();
 		this.id = entity.getId();
 		this.jobPrefix = entity.getJobPrefix();
 		this.email = entity.getEmail();

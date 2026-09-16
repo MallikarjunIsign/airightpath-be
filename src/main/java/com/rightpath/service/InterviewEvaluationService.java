@@ -89,7 +89,10 @@ public class InterviewEvaluationService {
         // Build transcript
         StringBuilder transcript = new StringBuilder();
         transcript.append("Position: ").append(schedule.getJobPrefix()).append("\n");
-        transcript.append("Candidate: ").append(schedule.getEmail()).append("\n\n");
+        transcript.append("Candidate: ").append(schedule.getEmail()).append("\n");
+        // Named so the grader weighs a behavioural round as one, rather than
+        // marking it down for technical depth it was never meant to ask about.
+        transcript.append("Round: ").append(schedule.getEffectiveRound().getDisplayName()).append("\n\n");
 
         for (VoiceConversationEntry entry : entries) {
             String speaker = switch (entry.getRole()) {
@@ -101,8 +104,8 @@ public class InterviewEvaluationService {
         }
 
         // Build evaluation prompt for this job including categories & transcript
-        String prompt = buildEvaluationPrompt(schedule.getJobPrefix(), transcript.toString(),
-                schedule.getCompletionReason(), schedule.getTotalQuestionsAsked());
+        String prompt = buildEvaluationPrompt(schedule.getJobPrefix(), schedule.getEffectiveRound(),
+                transcript.toString(), schedule.getCompletionReason(), schedule.getTotalQuestionsAsked());
 
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", "You are an expert interview evaluator. Always respond with valid JSON only."),
@@ -139,17 +142,21 @@ public class InterviewEvaluationService {
         return result;
     }
 
-    private String buildEvaluationPrompt(String jobPrefix, String transcript,
+    private String buildEvaluationPrompt(String jobPrefix, com.rightpath.enums.InterviewRound round,
+                                         String transcript,
                                          CompletionReason completionReason, int totalQuestionsAsked) {
         String categorySection = categoryFormatter.buildEvaluationCategorySection(jobPrefix);
 
         // Try to load custom SUMMARY prompt
         String customInstructions = "";
         try {
-            var summaryPrompt = jobPromptRepository.findByJobPrefixAndPromptTypeAndPromptStage(
-                    jobPrefix, com.rightpath.enums.PromptType.INTERVIEW, com.rightpath.enums.PromptStage.SUMMARY);
-            if (summaryPrompt.isPresent()) {
-                String resolved = placeholderResolver.resolveJobPlaceholders(summaryPrompt.get().getPrompt(), jobPrefix);
+            // Round-specific criteria where configured, otherwise the shared ones.
+            // Resolution lives in the prompt service so the interviewer and the
+            // grader cannot disagree about which prompt belongs to which round.
+            String summaryPrompt = jobPromptService.getInterviewPrompt(
+                    jobPrefix, round, com.rightpath.enums.PromptStage.SUMMARY);
+            if (summaryPrompt != null && !summaryPrompt.isBlank()) {
+                String resolved = placeholderResolver.resolveJobPlaceholders(summaryPrompt, jobPrefix);
                 customInstructions = "\n\nAdditional evaluation instructions:\n" + resolved;
             }
         } catch (Exception e) {

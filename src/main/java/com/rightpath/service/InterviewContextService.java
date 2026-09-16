@@ -168,8 +168,11 @@ public class InterviewContextService {
      * Build system prompt from DB with placeholder substitution.
      */
     private String buildSystemPrompt(CandidateInterviewSchedule schedule) {
-        String template = jobPromptService.getPrompt(
-                schedule.getJobPrefix(), PromptType.INTERVIEW, PromptStage.START);
+        // Per round, so the technical and behavioural interviews can be briefed
+        // differently. Falls back to the round-agnostic INTERVIEW prompt, which
+        // is all a job configured before rounds existed has.
+        String template = jobPromptService.getInterviewPrompt(
+                schedule.getJobPrefix(), schedule.getEffectiveRound(), PromptStage.START);
         return placeholderResolver.resolveAllInterviewPlaceholders(
                 template, schedule.getJobPrefix(), schedule.getEmail(), schedule.getInterviewerName());
     }

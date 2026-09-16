@@ -7,6 +7,7 @@ import java.util.List;
 import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.CompletionReason;
 import com.rightpath.enums.InterviewPhase;
+import com.rightpath.enums.InterviewRound;
 import com.rightpath.enums.InterviewResult;
 
 import jakarta.persistence.CascadeType;
@@ -86,6 +87,18 @@ public class CandidateInterviewSchedule {
 	@Builder.Default
 	private InterviewPhase currentPhase = InterviewPhase.INTRODUCTION;
 
+	/**
+	 * Which interview this is — L2 technical or L3 behavioural.
+	 *
+	 * <p>Null on every schedule created before rounds existed. Read it through
+	 * {@link #getEffectiveRound()} rather than directly: those rows are technical
+	 * interviews, and treating null as "unknown" would drop historic results out
+	 * of both round filters.</p>
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "interview_round", length = 32)
+	private InterviewRound round;
+
 	@Builder.Default
 	private int difficultyLevel = 2;
 
@@ -136,5 +149,10 @@ public class CandidateInterviewSchedule {
 
 	public void addWarning() {
 		this.warningCount++;
+	}
+
+	/** Never null — a schedule with no round recorded is a technical interview. */
+	public InterviewRound getEffectiveRound() {
+		return InterviewRound.orDefault(round);
 	}
 }
