@@ -46,6 +46,15 @@ public interface ExamProctoringCaptureRepository extends JpaRepository<ExamProct
      */
     void deleteByAssessmentIdAndCaptureType(Long assessmentId, ProctoringCaptureType captureType);
 
+    /** Interview equivalents of the three lookups above. */
+    List<ExamProctoringCapture> findByInterviewScheduleIdOrderByCaptureTypeAscFrameIndexAsc(
+            Long interviewScheduleId);
+
+    Optional<ExamProctoringCapture> findByInterviewScheduleIdAndCaptureTypeAndFrameIndex(
+            Long interviewScheduleId, ProctoringCaptureType captureType, int frameIndex);
+
+    void deleteByInterviewScheduleIdAndCaptureType(Long interviewScheduleId, ProctoringCaptureType captureType);
+
     /**
      * Captures for every attempt of a candidate on one job, for the admin view
      * that opens from a result row.

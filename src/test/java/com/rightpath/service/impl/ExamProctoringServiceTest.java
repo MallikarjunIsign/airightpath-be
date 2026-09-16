@@ -33,6 +33,7 @@ import com.rightpath.enums.AssessmentType;
 import com.rightpath.enums.ProctoringCaptureType;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.AssessmentRepository;
+import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.ExamProctoringCaptureRepository;
 import com.rightpath.service.StorageService;
 
@@ -53,6 +54,7 @@ class ExamProctoringServiceTest {
 
 	private ExamProctoringCaptureRepository captures;
 	private AssessmentRepository assessments;
+	private CandidateInterviewScheduleRepository schedules;
 	private StorageService storage;
 	private ExamProctoringServiceImpl service;
 
@@ -60,8 +62,12 @@ class ExamProctoringServiceTest {
 	void setUp() {
 		captures = mock(ExamProctoringCaptureRepository.class);
 		assessments = mock(AssessmentRepository.class);
+		// Captures can now belong to an interview as well as an assessment; these
+		// cases only exercise the assessment path, so the schedule lookup is a
+		// stub that is never reached.
+		schedules = mock(CandidateInterviewScheduleRepository.class);
 		storage = mock(StorageService.class);
-		service = new ExamProctoringServiceImpl(captures, assessments, storage);
+		service = new ExamProctoringServiceImpl(captures, assessments, schedules, storage);
 
 		ReflectionTestUtils.setField(service, "proctoringPrefix", "proctoring");
 		ReflectionTestUtils.setField(service, "maxFileSizeBytes", 5_242_880L);

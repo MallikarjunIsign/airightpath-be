@@ -69,4 +69,26 @@ public interface ExamProctoringService {
      * @return the image bytes and how to serve them
      */
     ProctoringCaptureImage loadImage(Long captureId);
+
+    /**
+     * Stores the identity photo taken before an interview.
+     *
+     * <p>Same evidence as the exam equivalent, filed against the interview
+     * schedule instead of an assessment. The two id spaces are independent, so
+     * they are deliberately separate parameters rather than one reused column.</p>
+     *
+     * @param scheduleId     the interview about to be sat
+     * @param candidateEmail must match the authenticated candidate
+     * @param actorEmail     the authenticated candidate, from the security context
+     */
+    ProctoringCaptureDto saveInterviewIdentityPhoto(String scheduleId, String candidateEmail, String capturedAt,
+            org.springframework.web.multipart.MultipartFile photo, String actorEmail);
+
+    /** Stores the room sweep taken before an interview, replacing any previous one. */
+    java.util.List<ProctoringCaptureDto> saveInterviewRoomScan(String scheduleId, String candidateEmail,
+            String capturedAt, java.util.List<org.springframework.web.multipart.MultipartFile> frames,
+            String actorEmail);
+
+    /** Every capture stored against one interview, for admin review. */
+    java.util.List<ProctoringCaptureDto> getInterviewCaptures(Long scheduleId);
 }

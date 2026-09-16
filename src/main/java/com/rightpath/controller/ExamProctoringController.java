@@ -97,6 +97,50 @@ public class ExamProctoringController {
      * @param assessmentId the assessment attempt
      * @return ordered captures; an empty list when nothing was captured
      */
+    /**
+     * Stores the identity photo taken before an interview.
+     *
+     * <p>Interview twin of {@code /identity-photo}. A separate path rather than
+     * an extra parameter on that one: assessment ids and interview-schedule ids
+     * are independent sequences, and a single endpoint taking "an id" would make
+     * it possible to file an interview capture under an assessment.</p>
+     */
+    @PostMapping(value = "/interview/identity-photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<ProctoringCaptureDto>> uploadInterviewIdentityPhoto(
+            @RequestParam("scheduleId") String scheduleId,
+            @RequestParam("candidateEmail") String candidateEmail,
+            @RequestParam(value = "capturedAt", required = false) String capturedAt,
+            @RequestPart("photo") MultipartFile photo,
+            Authentication authentication) {
+
+        ProctoringCaptureDto stored = examProctoringService.saveInterviewIdentityPhoto(scheduleId, candidateEmail,
+                capturedAt, photo, authentication.getName());
+
+        return ResponseEntity.ok(ApiResponse.ok(stored));
+    }
+
+    /** Stores the room sweep taken before an interview, replacing any previous one. */
+    @PostMapping(value = "/interview/room-scan", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<List<ProctoringCaptureDto>>> uploadInterviewRoomScan(
+            @RequestParam("scheduleId") String scheduleId,
+            @RequestParam("candidateEmail") String candidateEmail,
+            @RequestParam(value = "capturedAt", required = false) String capturedAt,
+            @RequestPart("frames") List<MultipartFile> frames,
+            Authentication authentication) {
+
+        List<ProctoringCaptureDto> stored = examProctoringService.saveInterviewRoomScan(scheduleId, candidateEmail,
+                capturedAt, frames, authentication.getName());
+
+        return ResponseEntity.ok(ApiResponse.ok(stored));
+    }
+
+    /** Every capture stored against one interview, for admin review. */
+    @GetMapping("/interviews/{scheduleId}/captures")
+    public ResponseEntity<ApiResponse<List<ProctoringCaptureDto>>> listInterviewCaptures(
+            @PathVariable Long scheduleId) {
+        return ResponseEntity.ok(ApiResponse.ok(examProctoringService.getInterviewCaptures(scheduleId)));
+    }
+
     @GetMapping("/assessments/{assessmentId}/captures")
     @PreAuthorize("hasAuthority('ASSESSMENT_READ')")
     public ResponseEntity<ApiResponse<List<ProctoringCaptureDto>>> getCapturesForAssessment(
