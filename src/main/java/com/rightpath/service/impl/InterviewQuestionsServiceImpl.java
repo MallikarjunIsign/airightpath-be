@@ -29,6 +29,7 @@ import com.rightpath.service.StorageService;
 
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class InterviewQuestionsServiceImpl implements InterviewQuestionsService {
 
     @Autowired
@@ -87,7 +88,9 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
                     .findByJobPrefixOrderByIdDesc(jobPrefix)
                     .stream()
                     .findFirst()
-                    .orElseThrow(() -> new ResourceNotFoundException("No file found for jobPrefix"));
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "No interview questions have been uploaded for this job (" + jobPrefix
+                                    + "). Upload an interview question set before starting the interview."));
 
             //  Step 2: Extract key
             String key = entity.getFileName(); // interview/file.json
@@ -103,13 +106,22 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
             String fileName = parts[1]; // actual file
 
             //  Step 4: Download from S3
-            String content = storageService.downloadFileAsText(prefix, fileName);
+            return storageService.downloadFileAsText(prefix, fileName);
 
-            return content;
-
+        } catch (ResourceNotFoundException e) {
+            // Rethrown deliberately. This used to be caught by the blanket
+            // handler below and replaced with a RuntimeException, so a job with
+            // no interview questions uploaded answered 500 "Something went wrong
+            // on our end" — and the candidate's screen blamed their network.
+            // As a 404 the message reaches the candidate and names the fix.
+            throw e;
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("❌ Failed to fetch interview questions");
+            // A genuine infrastructure failure: the record exists but the file
+            // could not be read. Logged with its cause rather than printed to
+            // stdout, and kept distinct from "nothing was ever uploaded".
+            log.error("Could not read the interview question file for jobPrefix {}", jobPrefix, e);
+            throw new IllegalStateException(
+                    "The interview questions for this job could not be read. Please contact your administrator.", e);
         }
     }
 
@@ -127,6 +139,13 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
         try {
             JsonNode root = mapper.readTree(content);
             JsonNode questionsNode = root.get("questions");
+            if (questionsNode == null || !questionsNode.isArray()) {
+                // Iterating a null node threw a NullPointerException, which the
+                // blanket catch below turned into the same opaque 500 as every
+                // other failure here.
+                throw new IllegalStateException(
+                        "The interview question file for this job has no \"questions\" list.");
+            }
             List<InterviewQuestionInfo> allQuestions = new ArrayList<>();
             for (JsonNode node : questionsNode) {
                 String uniqueId = node.get("uniqueId").asText();
@@ -152,8 +171,15 @@ public class InterviewQuestionsServiceImpl implements InterviewQuestionsService 
             }
 
             return prepareInterviewQuestions(allQuestions);
+        } catch (ResourceNotFoundException | IllegalStateException e) {
+            // Already carries a message meant for the candidate — see
+            // fetchInterviewQuestions. Wrapping it here would put it back behind
+            // a generic 500.
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load questions", e);
+            log.error("Interview question file for jobPrefix {} could not be parsed", jobPrefix, e);
+            throw new IllegalStateException(
+                    "The interview questions for this job are not readable. Please contact your administrator.", e);
         }
     }
     

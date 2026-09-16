@@ -48,6 +48,9 @@ class RbacPermissionSplitTest {
     void candidatesCannotManageRolesOrAccounts() {
         EnumSet<PermissionName> user = RbacSeedConfig.userPermissions();
         assertFalse(user.contains(PermissionName.ROLE_MANAGE), "this was the escalation path");
+        // Also guards GET /api/admin/rbac/user, which used to accept USER_READ
+        // and so let any candidate read anyone's roles — see
+        // RbacViewAuthorizationTest.
         assertFalse(user.contains(PermissionName.USER_LIST));
         assertFalse(user.contains(PermissionName.USER_ACTIVATE));
         assertFalse(user.contains(PermissionName.USER_DEACTIVATE));
