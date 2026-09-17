@@ -39,7 +39,7 @@ class InterviewResultsRoundFilterTest {
         scheduleRepo = mock(CandidateInterviewScheduleRepository.class);
         // Only the schedule repository is exercised by getResults; the rest of
         // the interview machinery is irrelevant to a read of stored rows.
-        service = new InterviewServiceImpl(null, scheduleRepo, null, null, null, null, null, null);
+        service = new InterviewServiceImpl(null, scheduleRepo, null, null, null, null, null);
     }
 
     private CandidateInterviewSchedule schedule(String email, InterviewRound round) {

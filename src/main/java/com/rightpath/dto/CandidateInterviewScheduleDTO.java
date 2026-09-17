@@ -22,6 +22,15 @@ public class CandidateInterviewScheduleDTO {
 	private LocalDateTime assignedAt;
 	private LocalDateTime deadlineTime;
 	private String recordReferences;
+	/**
+	 * Where the candidate's shared screen was stored.
+	 *
+	 * The upload has always worked and the column has always been written, but
+	 * this field was missing from the DTO — so the recording sat in storage with
+	 * no way for a reviewer to reach it. For a coding round it is the only
+	 * evidence of how the answer was arrived at.
+	 */
+	private String screenRecordReferences;
 	private String summaryReferences;
 	private int warningCount;
 	private String evaluationJson;
@@ -53,6 +62,7 @@ public class CandidateInterviewScheduleDTO {
 		this.assignedAt = entity.getAssignedAt();
 		this.deadlineTime = entity.getDeadlineTime();
 		this.recordReferences = entity.getRecordReferences();
+		this.screenRecordReferences = entity.getScreenRecordReferences();
 		this.summaryReferences = entity.getSummaryReferences();
 		this.warningCount = entity.getWarningCount();
 		this.evaluationJson = entity.getEvaluationJson();

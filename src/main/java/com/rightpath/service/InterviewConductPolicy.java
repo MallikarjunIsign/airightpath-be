@@ -34,6 +34,19 @@ public class InterviewConductPolicy {
     /** Emitted by the model when it judges the interview finished. */
     public static final String COMPLETION_MARKER = "[INTERVIEW COMPLETE]";
 
+    /**
+     * The closing phrase a job's own prompt may ask for.
+     *
+     * Every interview prompt is now written per job in the console, and a
+     * recruiter may well end theirs with "When the interview is complete, say:
+     * Interview completed." — the wording the built-in prompt used before it
+     * was removed. That instruction reaches the model alongside the marker
+     * above, so a reply obeying the prompt rather than the marker has to close
+     * the interview too, or it runs to the question ceiling with the
+     * interviewer having already said goodbye.
+     */
+    private static final String LEGACY_COMPLETION_PHRASE = "interview completed";
+
     /** Tag the frontend looks for to open the code editor. */
     public static final String CODING_TAG = "[CODING]";
 
@@ -113,12 +126,28 @@ public class InterviewConductPolicy {
         return rules.toString();
     }
 
-    /** Whether a model reply asked to end the interview. */
+    /**
+     * Whether a model reply asked to end the interview.
+     *
+     * Accepts either signal — see {@link #LEGACY_COMPLETION_PHRASE}. Matched
+     * case-insensitively because the phrase is dictated by prose instructions,
+     * not by a format the model is holding to exactly.
+     */
     public boolean isClosing(String reply) {
-        return reply != null && reply.contains(COMPLETION_MARKER);
+        if (reply == null) {
+            return false;
+        }
+        return reply.contains(COMPLETION_MARKER)
+                || reply.toLowerCase().contains(LEGACY_COMPLETION_PHRASE);
     }
 
-    /** The reply with the closing marker taken out, for speaking and storing. */
+    /**
+     * The reply with the closing marker taken out, for speaking and storing.
+     *
+     * Only the bracketed marker is removed. The legacy phrase is a real
+     * sentence the interviewer meant to say, so stripping it would leave the
+     * candidate with a truncated farewell.
+     */
     public String stripCompletionMarker(String reply) {
         if (reply == null) {
             return "";

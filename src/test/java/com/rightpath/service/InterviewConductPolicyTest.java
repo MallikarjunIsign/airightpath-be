@@ -115,6 +115,26 @@ class InterviewConductPolicyTest {
     }
 
     @Test
+    void theLegacyClosingPhraseAlsoCloses() {
+        // interview-prompts.properties is still the live system prompt for any
+        // job with no interview prompt saved, and it asks the model to say
+        // "Interview completed." rather than emit the marker. Recognising only
+        // the marker left those interviews running to the question ceiling
+        // after the interviewer had already signed off.
+        assertTrue(policy.isClosing("Thanks for your time. Interview completed."));
+        assertTrue(policy.isClosing("interview completed"), "the phrase is prose, so case must not matter");
+    }
+
+    @Test
+    void theLegacyClosingPhraseIsLeftInWhatTheCandidateHears() {
+        // Unlike the bracketed marker, this is a sentence the interviewer meant
+        // to say; stripping it would truncate the farewell.
+        String spoken = policy.stripCompletionMarker("Thanks for your time. Interview completed.");
+
+        assertEquals("Thanks for your time. Interview completed.", spoken);
+    }
+
+    @Test
     void anOrdinaryQuestionDoesNotClose() {
         assertFalse(policy.isClosing("Thanks. Now, what is a hash map?"));
         assertFalse(policy.isClosing(null), "a missing reply is not a completed interview");

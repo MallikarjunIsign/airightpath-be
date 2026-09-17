@@ -35,7 +35,6 @@ import com.rightpath.service.InterviewService;
 import com.rightpath.service.JobPromptService;
 import com.rightpath.service.OpenAiService;
 import com.rightpath.service.StorageService;
-import com.rightpath.util.PromptService;
 import com.rightpath.util.StatusTransitionValidator;
 
 @Service
@@ -60,7 +59,7 @@ public class InterviewServiceImpl implements InterviewService {
 	private final com.rightpath.service.EmailAsyncService emailAsyncService;
 
 	public InterviewServiceImpl(OpenAiService openAiService, CandidateInterviewScheduleRepository scheduleRepo,
-			JobApplicationForCandidateRepository jobAppRepo, PromptService promptService,
+			JobApplicationForCandidateRepository jobAppRepo,
 			InterviewReportService interviewReportService, StorageService storageService,
 			JobPromptService jobPromptService, com.rightpath.service.EmailAsyncService emailAsyncService) {
 

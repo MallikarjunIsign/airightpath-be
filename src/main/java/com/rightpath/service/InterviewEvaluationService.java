@@ -33,6 +33,9 @@ public class InterviewEvaluationService {
     private static final Set<String> PASS_RECOMMENDATIONS = Set.of("STRONG_HIRE", "HIRE", "LEAN_HIRE");
     private static final Set<String> FAIL_RECOMMENDATIONS = Set.of("LEAN_NO_HIRE", "NO_HIRE");
 
+    /** What a skipped question is recorded as — not an answer. */
+    private static final String SKIPPED_CONTENT = "[NO RESPONSE - SKIPPED]";
+
     private final OpenAiStreamingService openAiStreamingService;
     private final CandidateInterviewScheduleRepository scheduleRepo;
     private final VoiceConversationEntryRepository entryRepository;
@@ -85,6 +88,21 @@ public class InterviewEvaluationService {
 
         List<VoiceConversationEntry> entries = entryRepository
                 .findByInterviewScheduleIdOrderByTimestampAsc(scheduleId);
+
+        // An interview with nothing in it is not graded.
+        //
+        // Asked to score a transcript containing only the interviewer's own
+        // words, the model does not decline — it invents a plausible candidate.
+        // A real interview that timed out before the candidate said anything
+        // came back 7.0, LEAN_HIRE, "demonstrated a solid understanding of
+        // fundamental data structures", and the schedule was marked PASSED. No
+        // score is far better than a confident fabrication that a hiring
+        // decision then rests on.
+        if (countAnswers(entries) == 0) {
+            log.warn("Schedule {} has no candidate answers — recording it as not assessable rather than grading it",
+                    scheduleId);
+            return recordNotAssessable(schedule, entries);
+        }
 
         // Build transcript
         StringBuilder transcript = new StringBuilder();
@@ -195,6 +213,48 @@ public class InterviewEvaluationService {
                 Interview Transcript:
                 %s
                 """, categorySection, customInstructions, earlyTerminationContext, transcript);
+    }
+
+    /** Candidate turns that actually said something. Skips are not answers. */
+    private long countAnswers(List<VoiceConversationEntry> entries) {
+        return entries.stream()
+                .filter(entry -> entry.getRole() == ConversationRole.CANDIDATE)
+                .map(VoiceConversationEntry::getContent)
+                .filter(content -> content != null && !content.isBlank())
+                .filter(content -> !SKIPPED_CONTENT.equals(content.trim()))
+                .count();
+    }
+
+    /**
+     * Stores the fact that there was nothing to assess.
+     *
+     * <p>The result is deliberately left as it was — neither PASSED nor FAILED.
+     * "The candidate did not answer" is a fact; whether it means a no-show, a
+     * technical fault at their end or a withdrawal is not something this service
+     * can know, and each wants a different decision from a person. The stored
+     * evaluation says so plainly so the reviewer sees why there are no scores
+     * instead of an empty panel.</p>
+     */
+    private VoiceEvaluationResult recordNotAssessable(CandidateInterviewSchedule schedule,
+            List<VoiceConversationEntry> entries) {
+        VoiceEvaluationResult result = new VoiceEvaluationResult();
+        result.setOverallScore(0);
+        result.setRecommendation(null);
+        result.setCategoryScores(List.of());
+        result.setSummary("Not assessable: the candidate did not answer any questions, so there is nothing to score. "
+                + "Review the transcript and decide how to proceed.");
+        result.setStrengths(List.of());
+        result.setAreasForImprovement(List.of("No answers were recorded for this interview."));
+        result.setSpeechAnalysis(calculateSpeechAnalysis(entries));
+
+        try {
+            schedule.setEvaluationJson(objectMapper.writeValueAsString(result));
+        } catch (Exception e) {
+            log.error("Could not store the not-assessable evaluation for schedule {}", schedule.getId(), e);
+        }
+        scheduleRepo.save(schedule);
+
+        return result;
     }
 
     private VoiceEvaluationResult parseEvaluation(String json) {

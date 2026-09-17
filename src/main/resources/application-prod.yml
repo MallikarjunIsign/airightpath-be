@@ -57,8 +57,6 @@ spring:
   mvc:
     async:
       request-timeout: 300000
-  config:
-    import: "classpath:interview-prompts.properties"
 
 # Password validator
 password:
@@ -124,6 +122,9 @@ openai:
   model: gpt-4o
   audio:
     model: whisper-1
+    # Pinned rather than auto-detected: answers are transcribed as
+    # short fragments, and per-fragment detection mangles them.
+    language: en
   question:
     timeout-seconds: 180
     generation:

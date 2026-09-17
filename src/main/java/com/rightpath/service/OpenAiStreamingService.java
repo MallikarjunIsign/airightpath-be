@@ -41,6 +41,17 @@ public class OpenAiStreamingService {
     private final String baseUrl;
     private final String model;
     private final String whisperModel;
+    /**
+     * Language pinned for transcription, rather than detected per chunk.
+     *
+     * Answers are streamed to Whisper as two-to-four second fragments and each
+     * is transcribed on its own. Left to auto-detect, a fragment that long is
+     * often assigned the wrong language, and the text comes back mangled — a
+     * real answer about "stack or queue" was transcribed "stock star Q is a
+     * star". The interviewer then replied to the mangled text, and the grader
+     * scored it.
+     */
+    private final String whisperLanguage;
     private final String ttsModel;
     private final String ttsVoice;
 
@@ -49,6 +60,7 @@ public class OpenAiStreamingService {
             @Value("${openai.api.base-url}") String baseUrl,
             @Value("${openai.model}") String model,
             @Value("${openai.audio.model}") String whisperModel,
+            @Value("${openai.audio.language:en}") String whisperLanguage,
             @Value("${openai.tts.model:tts-1-hd}") String ttsModel,
             @Value("${openai.tts.voice:nova}") String ttsVoice) {
         this.httpClient = new OkHttpClient.Builder()
@@ -61,6 +73,7 @@ public class OpenAiStreamingService {
         this.baseUrl = baseUrl;
         this.model = model;
         this.whisperModel = whisperModel;
+        this.whisperLanguage = whisperLanguage;
         this.ttsModel = ttsModel;
         this.ttsVoice = ttsVoice;
     }
@@ -172,13 +185,23 @@ public class OpenAiStreamingService {
         try {
             RequestBody fileBody = RequestBody.create(audioData, MediaType.parse("audio/webm"));
 
-            MultipartBody body = new MultipartBody.Builder()
+            MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("file", filename, fileBody)
                     .addFormDataPart("model", whisperModel)
                     .addFormDataPart("response_format", "verbose_json")
                     .addFormDataPart("timestamp_granularities[]", "word")
-                    .build();
+                    // Deterministic decoding. Whisper invents fluent filler on
+                    // low-signal audio at its default temperature — "Thank you
+                    // for joining us" appeared in a candidate's answer, having
+                    // never been said by anyone.
+                    .addFormDataPart("temperature", "0");
+
+            if (whisperLanguage != null && !whisperLanguage.isBlank()) {
+                bodyBuilder.addFormDataPart("language", whisperLanguage.trim());
+            }
+
+            MultipartBody body = bodyBuilder.build();
 
             Request request = new Request.Builder()
                     .url(baseUrl + "/audio/transcriptions")
