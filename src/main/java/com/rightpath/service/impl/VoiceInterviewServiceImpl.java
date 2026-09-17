@@ -82,6 +82,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     private final SimpMessagingTemplate messagingTemplate;
     private final TransactionTemplate transactionTemplate;
     private final InterviewConductPolicy conductPolicy;
+    private final com.rightpath.repository.UsersRepository usersRepository;
 
     @Value("${interview.max-warnings:5}")
     private int maxWarnings;
@@ -100,7 +101,8 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
             CandidatePerformanceAnalyzer performanceAnalyzer,
             SimpMessagingTemplate messagingTemplate,
             TransactionTemplate transactionTemplate,
-            InterviewConductPolicy conductPolicy) {
+            InterviewConductPolicy conductPolicy,
+            com.rightpath.repository.UsersRepository usersRepository) {
         this.scheduleRepo = scheduleRepo;
         this.entryRepository = entryRepository;
         this.openAiStreamingService = openAiStreamingService;
@@ -112,14 +114,45 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         this.messagingTemplate = messagingTemplate;
         this.transactionTemplate = transactionTemplate;
         this.conductPolicy = conductPolicy;
+        this.usersRepository = usersRepository;
     }
 
-    /** The fixed greeting that opens every interview. */
+    /**
+     * The greeting that opens every interview.
+     *
+     * <p>Addressed to the candidate by name where one is on file. It is the
+     * first thing they hear, and being greeted as nobody in particular sets the
+     * wrong tone for something that is otherwise a conversation. Falls back to
+     * an unnamed greeting rather than guessing from the email address, which
+     * would produce "Hello, rohith.mamidala".</p>
+     */
     private String buildWelcome(CandidateInterviewSchedule schedule) {
         String interviewer = schedule.getInterviewerName();
-        return "Hello, and welcome. I'm " + (interviewer == null || interviewer.isBlank() ? "your interviewer" : interviewer)
+        String greeting = candidateFirstName(schedule.getEmail())
+                .map(name -> "Hello " + name + ", and welcome.")
+                .orElse("Hello, and welcome.");
+
+        return greeting + " I'm "
+                + (interviewer == null || interviewer.isBlank() ? "your interviewer" : interviewer)
                 + ", and I'll be taking your interview today. Answer in your own words, and take a moment to think"
                 + " before you speak if you need to. Let's begin.";
+    }
+
+    /** The candidate's first name, if their account carries one. */
+    private java.util.Optional<String> candidateFirstName(String email) {
+        if (email == null || email.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return usersRepository.findByEmail(email)
+                    .map(com.rightpath.entity.Users::getFirstName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .map(String::trim);
+        } catch (Exception e) {
+            // A greeting is never worth failing an interview over.
+            log.warn("Could not read the candidate's name for {}", email, e);
+            return java.util.Optional.empty();
+        }
     }
 
     /**

@@ -107,6 +107,32 @@ class InterviewConductPolicyTest {
         }
     }
 
+    @Test
+    void theFirstQuestionIsAnIntroduction() {
+        String rules = policy.asSystemMessage(0);
+
+        assertTrue(rules.contains("introduce themselves"),
+                "opening cold on a technical question gives a nervous candidate nothing to settle into");
+        assertTrue(rules.contains("Do not ask anything technical yet"));
+    }
+
+    @Test
+    void technicalQuestionsStartRightAfterTheIntroduction() {
+        String rules = policy.asSystemMessage(1);
+
+        assertTrue(rules.contains("Move on to technical questions"));
+        assertFalse(rules.contains("introduce themselves"),
+                "asking for an introduction twice wastes a question from the budget");
+    }
+
+    @Test
+    void theOpeningInstructionsAreGoneOnceTheInterviewIsUnderWay() {
+        String rules = policy.asSystemMessage(5);
+
+        assertFalse(rules.contains("introduce themselves"));
+        assertFalse(rules.contains("Move on to technical questions"));
+    }
+
     // ── reading the model's reply ─────────────────────────────────────
 
     @Test
