@@ -53,6 +53,9 @@ public class InterviewController {
 	private static final Logger log = LoggerFactory.getLogger(InterviewController.class);
 	
 	@Autowired
+	private com.rightpath.service.StorageService storageService;
+
+	@Autowired
 	private InterviewQuestionsService interviewQuestionsService;
 
 	@Autowired
@@ -247,6 +250,44 @@ public class InterviewController {
 	 * lazy relation, and serialising it outside a transaction answered 500 for
 	 * every interview — see {@link VoiceConversationEntryDTO}.</p>
 	 */
+	/**
+	 * A playable link to one of an interview's recordings.
+	 *
+	 * <p>The schedule stores {@code s3://bucket/key}, which a browser cannot
+	 * open — reviewers clicking "Camera" or "Shared screen" got a blank tab. A
+	 * signed URL is returned rather than the bytes: a full interview's screen
+	 * recording is far too large to pass through the application, and a video
+	 * player needs range requests to seek.</p>
+	 *
+	 * @param kind {@code camera} for the webcam, {@code screen} for the shared screen
+	 */
+	@GetMapping("/{scheduleId}/recording")
+	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
+	public ResponseEntity<Map<String, Object>> getRecordingLink(@PathVariable Long scheduleId,
+			@RequestParam(defaultValue = "camera") String kind) {
+
+		CandidateInterviewSchedule schedule = interviewService.getResultDetail(scheduleId);
+
+		boolean screen = "screen".equalsIgnoreCase(kind);
+		String reference = screen ? schedule.getScreenRecordReferences() : schedule.getRecordReferences();
+
+		if (reference == null || reference.isBlank()) {
+			// A 404 rather than an empty 200: "never recorded" is a different
+			// thing from "here is a link to nothing", and the reviewer's screen
+			// says which.
+			throw new com.rightpath.exceptions.ResourceNotFoundException("No " + (screen ? "screen" : "camera")
+					+ " recording was stored for this interview.");
+		}
+
+		// Long enough to watch an hour-long interview through, short enough that
+		// a copied link does not become a permanent public one.
+		Duration ttl = Duration.ofHours(2);
+
+		return ResponseEntity.ok(Map.of(
+				"url", storageService.presignedUrl(reference, ttl),
+				"expiresInSeconds", ttl.toSeconds()));
+	}
+
 	@GetMapping("/{scheduleId}/conversation")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<List<VoiceConversationEntryDTO>> getConversation(@PathVariable Long scheduleId) {

@@ -29,6 +29,7 @@ public class S3StorageService implements StorageService {
     private final String bucketName;
     private final Region region;
     private final S3Client s3Client;
+    private final software.amazon.awssdk.services.s3.presigner.S3Presigner presigner;
 
     public S3StorageService(
             @Value("${aws.s3.bucket-name}") String bucketName,
@@ -37,11 +38,50 @@ public class S3StorageService implements StorageService {
             @Value("${aws.s3.secret-key}") String secretKey) {
         this.bucketName = bucketName;
         this.region = Region.of(regionName);
+        StaticCredentialsProvider credentials = StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(accessKey, secretKey));
+
         this.s3Client = S3Client.builder()
                 .region(this.region)
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKey, secretKey)))
+                .credentialsProvider(credentials)
                 .build();
+        this.presigner = software.amazon.awssdk.services.s3.presigner.S3Presigner.builder()
+                .region(this.region)
+                .credentialsProvider(credentials)
+                .build();
+    }
+
+    @Override
+    public String presignedUrl(String storedReference, java.time.Duration ttl) {
+        String key = keyOf(storedReference);
+        var getRequest = GetObjectRequest.builder().bucket(bucketName).key(key).build();
+        var presignRequest = software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.builder()
+                .signatureDuration(ttl)
+                .getObjectRequest(getRequest)
+                .build();
+        return presigner.presignGetObject(presignRequest).url().toString();
+    }
+
+    /**
+     * The object key inside a reference this service produced.
+     *
+     * <p>Uploads return {@code s3://bucket/key}; a bare key is accepted too, so
+     * a reference stored before that format settled still resolves.</p>
+     */
+    private String keyOf(String storedReference) {
+        if (storedReference == null || storedReference.isBlank()) {
+            throw new StorageException("No stored reference to sign", null);
+        }
+        String reference = storedReference.trim();
+        if (!reference.startsWith("s3://")) {
+            return reference;
+        }
+        String withoutScheme = reference.substring("s3://".length());
+        int slash = withoutScheme.indexOf('/');
+        if (slash < 0 || slash == withoutScheme.length() - 1) {
+            throw new StorageException("Stored reference names no object: " + storedReference, null);
+        }
+        return withoutScheme.substring(slash + 1);
     }
 
     @Override
