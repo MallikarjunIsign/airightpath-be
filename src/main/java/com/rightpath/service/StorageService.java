@@ -30,5 +30,16 @@ public interface StorageService {
 	 * @param ttl             how long the URL stays valid
 	 */
 	String presignedUrl(String storedReference, java.time.Duration ttl);
+
+	/**
+	 * The same link, but asking the browser to save the file rather than show it.
+	 *
+	 * <p>Separate from {@link #presignedUrl} because the disposition is signed
+	 * into the URL — one link cannot both play inline and download, so the caller
+	 * has to say which the person asked for.</p>
+	 *
+	 * @param downloadName the filename to save as
+	 */
+	String presignedDownloadUrl(String storedReference, String downloadName, java.time.Duration ttl);
 	 
 }

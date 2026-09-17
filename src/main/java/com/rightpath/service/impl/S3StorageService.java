@@ -54,12 +54,73 @@ public class S3StorageService implements StorageService {
     @Override
     public String presignedUrl(String storedReference, java.time.Duration ttl) {
         String key = keyOf(storedReference);
-        var getRequest = GetObjectRequest.builder().bucket(bucketName).key(key).build();
+        // The response headers are overridden on the request rather than read
+        // from the object. Recordings already in the bucket were stored before
+        // the content type above was set, so they are still octet-stream at
+        // rest — signing them with the right type and an inline disposition
+        // makes those play too, with nothing re-uploaded.
+        var getRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .responseContentType(contentTypeOf(null, key))
+                .responseContentDisposition("inline")
+                .build();
         var presignRequest = software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.builder()
                 .signatureDuration(ttl)
                 .getObjectRequest(getRequest)
                 .build();
         return presigner.presignGetObject(presignRequest).url().toString();
+    }
+
+    @Override
+    public String presignedDownloadUrl(String storedReference, String downloadName,
+            java.time.Duration ttl) {
+        String key = keyOf(storedReference);
+        String safeName = (downloadName == null || downloadName.isBlank())
+                ? key.substring(key.lastIndexOf('/') + 1)
+                // Quoted and stripped of quotes/newlines: the value goes into a
+                // response header, and a filename carrying either would let a
+                // caller shape headers the server sends.
+                : downloadName.replaceAll("[\"\r\n]", "");
+
+        var getRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .responseContentType(contentTypeOf(null, key))
+                .responseContentDisposition("attachment; filename=\"" + safeName + "\"")
+                .build();
+        var presignRequest = software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.builder()
+                .signatureDuration(ttl)
+                .getObjectRequest(getRequest)
+                .build();
+        return presigner.presignGetObject(presignRequest).url().toString();
+    }
+
+    /**
+     * The content type to store or serve an object as.
+     *
+     * <p>Prefers what the uploader declared; falls back to the file extension,
+     * which is all that is known when signing a link to something stored
+     * earlier. Only the types this application actually stores are listed —
+     * anything else stays a generic binary, which downloads, and that is the
+     * right outcome for a file nothing here can play.</p>
+     */
+    private String contentTypeOf(String declared, String key) {
+        if (declared != null && !declared.isBlank() && !"application/octet-stream".equals(declared)) {
+            return declared;
+        }
+        String lower = key == null ? "" : key.toLowerCase();
+        if (lower.endsWith(".webm")) return "video/webm";
+        if (lower.endsWith(".mp4")) return "video/mp4";
+        if (lower.endsWith(".ogg")) return "video/ogg";
+        if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".json")) return "application/json";
+        if (lower.endsWith(".txt")) return "text/plain";
+        return "application/octet-stream";
     }
 
     /**
@@ -89,9 +150,13 @@ public class S3StorageService implements StorageService {
         validateInputs(prefix, fileName, file);
         try {
             String key = prefix + "/" + fileName;
+            // Stored with its type. Without this S3 serves every object as
+            // application/octet-stream, and a browser given one downloads it
+            // rather than playing it — which is what interview recordings did.
             PutObjectRequest putReq = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(key)
+                    .contentType(contentTypeOf(file.getContentType(), key))
                     .build();
             s3Client.putObject(putReq, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
             return String.format("s3://%s/%s", bucketName, key);

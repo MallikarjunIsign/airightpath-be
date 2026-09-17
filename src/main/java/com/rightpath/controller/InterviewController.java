@@ -264,7 +264,8 @@ public class InterviewController {
 	@GetMapping("/{scheduleId}/recording")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<Map<String, Object>> getRecordingLink(@PathVariable Long scheduleId,
-			@RequestParam(defaultValue = "camera") String kind) {
+			@RequestParam(defaultValue = "camera") String kind,
+			@RequestParam(defaultValue = "inline") String disposition) {
 
 		CandidateInterviewSchedule schedule = interviewService.getResultDetail(scheduleId);
 
@@ -283,9 +284,12 @@ public class InterviewController {
 		// a copied link does not become a permanent public one.
 		Duration ttl = Duration.ofHours(2);
 
-		return ResponseEntity.ok(Map.of(
-				"url", storageService.presignedUrl(reference, ttl),
-				"expiresInSeconds", ttl.toSeconds()));
+		String url = "attachment".equalsIgnoreCase(disposition)
+				? storageService.presignedDownloadUrl(reference,
+						"interview-" + scheduleId + "-" + (screen ? "screen" : "camera") + ".webm", ttl)
+				: storageService.presignedUrl(reference, ttl);
+
+		return ResponseEntity.ok(Map.of("url", url, "expiresInSeconds", ttl.toSeconds()));
 	}
 
 	@GetMapping("/{scheduleId}/conversation")
