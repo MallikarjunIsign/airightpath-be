@@ -23,4 +23,13 @@ public interface VoiceInterviewService {
     ResumeResponse resumeInterview(Long scheduleId);
 
 	VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate);
+
+	/**
+	 * Start one specific booked interview.
+	 *
+	 * @param scheduleId the interview the candidate chose, or null to fall back
+	 *                   to their most recently assigned one on this job
+	 */
+	VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate,
+			Long scheduleId);
 }

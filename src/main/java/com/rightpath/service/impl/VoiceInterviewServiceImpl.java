@@ -118,6 +118,33 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     }
 
     /**
+     * The interview being started.
+     *
+     * <p>The candidate's choice where they made one. They pick from a list of
+     * everything outstanding, and more than one can be — a repeat L2 alongside
+     * an L3 — so falling back to the most recently assigned schedule started
+     * whichever the administrator happened to book last rather than the one the
+     * candidate clicked.</p>
+     *
+     * <p>The id is checked against their own email rather than trusted. It
+     * arrives from the browser and schedule ids are sequential: without the
+     * check, editing one number would start somebody else's interview and write
+     * answers into their transcript.</p>
+     */
+    private CandidateInterviewSchedule resolveSchedule(String jobPrefix, String email, Long scheduleId) {
+        if (scheduleId != null) {
+            return scheduleRepo.findById(scheduleId)
+                    .filter(s -> s.getEmail() != null && s.getEmail().equalsIgnoreCase(email))
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Interview " + scheduleId + " was not found for " + email));
+        }
+        return scheduleRepo.findFirstByJobPrefixAndEmailOrderByAssignedAtDesc(jobPrefix, email)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Interview schedule not found for " + jobPrefix + " / " + email));
+    }
+
+
+    /**
      * The greeting that opens every interview.
      *
      * <p>Addressed to the candidate by name where one is on file. It is the
@@ -245,8 +272,14 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Override
     @Transactional
     public VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate) {
-        CandidateInterviewSchedule schedule = scheduleRepo.findFirstByJobPrefixAndEmailOrderByAssignedAtDesc(jobPrefix, email)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview schedule not found for " + jobPrefix + " / " + email));
+        return startVoiceInterview(jobPrefix, email, fromDate, toDate, null);
+    }
+
+    @Override
+    @Transactional
+    public VoiceStartResponse startVoiceInterview(String jobPrefix, String email, Long fromDate, Long toDate,
+            Long scheduleId) {
+        CandidateInterviewSchedule schedule = resolveSchedule(jobPrefix, email, scheduleId);
 
         // Resume, rather than silently restart.
         //

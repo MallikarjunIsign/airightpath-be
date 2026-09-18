@@ -204,7 +204,8 @@ public class InterviewController {
 	            req.getJobPrefix(),
 	            req.getEmail(),
 	            req.getFromDate(),
-	            req.getToDate());
+	            req.getToDate(),
+	            req.getScheduleId());
 	    return ResponseEntity.ok(response);
 	}
 	
