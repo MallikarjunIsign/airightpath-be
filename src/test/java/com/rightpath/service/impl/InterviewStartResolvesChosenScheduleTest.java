@@ -48,7 +48,7 @@ class InterviewStartResolvesChosenScheduleTest {
         // scheduleRepo is first; the rest of the interview machinery plays no
         // part in resolving which schedule to start.
         service = new VoiceInterviewServiceImpl(
-                scheduleRepo, null, null, null, null, null, null, null, null, null, null, null);
+                scheduleRepo, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private CandidateInterviewSchedule schedule(long id, String email, InterviewRound round) {

@@ -63,7 +63,9 @@ class EmptyInterviewIsNotGradedTest {
                 mock(JobPromptService.class),
                 mock(EvaluationCategoryFormatter.class),
                 mock(com.rightpath.repository.JobPromptRepository.class),
-                mock(PromptPlaceholderResolver.class));
+                mock(PromptPlaceholderResolver.class),
+                new com.rightpath.util.PromptInjectionGuard(),
+                new InterviewReviewTriage());
     }
 
     private CandidateInterviewSchedule schedule() {

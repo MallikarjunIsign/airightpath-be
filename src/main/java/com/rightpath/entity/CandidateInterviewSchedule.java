@@ -108,6 +108,33 @@ public class CandidateInterviewSchedule {
 	@Builder.Default
 	private int totalQuestionsAsked = 0;
 
+	/**
+	 * Turns that opened new ground, as opposed to pressing on the last one.
+	 *
+	 * <p>{@link #totalQuestionsAsked} counts every interviewer turn and is what
+	 * the hard ceiling is enforced against — it has to, or an interview could be
+	 * stretched indefinitely by calling each turn a follow-up. But the floor is a
+	 * statement about evidence, not about talking: ten turns that were all
+	 * follow-ups on one question is not ten questions' worth of signal. The
+	 * minimum is therefore measured here, and the maximum there.</p>
+	 */
+	@Builder.Default
+	private int distinctQuestionsAsked = 0;
+
+	/**
+	 * Follow-ups and rephrases spent on the question currently open.
+	 *
+	 * <p>Reset the moment a new question is asked. Without a counter the model
+	 * can keep deciding one more probe would help, and a candidate is held on the
+	 * same question until the ceiling stops the interview — the failure the
+	 * budget in {@code InterviewConductPolicy} exists to prevent.</p>
+	 */
+	@Builder.Default
+	private int followUpsOnCurrentQuestion = 0;
+
+	@Builder.Default
+	private int rephrasesOnCurrentQuestion = 0;
+
 	@Column(columnDefinition = "TEXT")
 	private String runningSummary;
 
@@ -116,6 +143,16 @@ public class CandidateInterviewSchedule {
 
 	@Column(columnDefinition = "LONGTEXT")
 	private String evaluationJson;
+
+	/**
+	 * Whether this result should be looked at by a person before it is acted on.
+	 *
+	 * <p>Duplicated out of {@link #evaluationJson}, where the reasons also live.
+	 * The results list needs to mark and filter on it, and doing that from the
+	 * JSON means deserialising a LONGTEXT column for every row on the page.</p>
+	 */
+	@Builder.Default
+	private boolean needsHumanReview = false;
 
 	@Column(columnDefinition = "VARCHAR(255) DEFAULT 'Sarah'")
 	@Builder.Default
@@ -145,6 +182,32 @@ public class CandidateInterviewSchedule {
 
 	public void incrementQuestionsAsked() {
 		this.totalQuestionsAsked++;
+	}
+
+	/** A turn that moved on: counts against the floor and clears the probe budget. */
+	public void recordNewQuestion() {
+		this.distinctQuestionsAsked++;
+		this.followUpsOnCurrentQuestion = 0;
+		this.rephrasesOnCurrentQuestion = 0;
+	}
+
+	public void recordFollowUp() {
+		this.followUpsOnCurrentQuestion++;
+	}
+
+	public void recordRephrase() {
+		this.rephrasesOnCurrentQuestion++;
+	}
+
+	/**
+	 * Questions asked, for anything that needs the floor rather than the ceiling.
+	 *
+	 * <p>Falls back to the turn count for interviews that ran before turns were
+	 * classified: their rows carry a zero here, and reading that literally would
+	 * tell the model a finished interview had not started.</p>
+	 */
+	public int getEffectiveDistinctQuestions() {
+		return distinctQuestionsAsked > 0 ? distinctQuestionsAsked : totalQuestionsAsked;
 	}
 
 	public void addWarning() {

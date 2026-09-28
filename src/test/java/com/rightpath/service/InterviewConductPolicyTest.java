@@ -8,6 +8,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.rightpath.dto.EffectiveInterviewTemplate;
+import com.rightpath.entity.CandidateInterviewSchedule;
+import com.rightpath.enums.InterviewDifficulty;
+import com.rightpath.util.PromptInjectionGuard;
+
 /**
  * The rules that stop a dynamic interview from running forever or stopping short.
  *
@@ -27,23 +32,43 @@ class InterviewConductPolicyTest {
 
     @BeforeEach
     void setUp() {
-        policy = new InterviewConductPolicy();
+        policy = new InterviewConductPolicy(new PromptInjectionGuard());
         ReflectionTestUtils.setField(policy, "minQuestions", MIN);
         ReflectionTestUtils.setField(policy, "maxQuestions", MAX);
+        ReflectionTestUtils.setField(policy, "maxFollowUpsPerQuestion", 2);
+        ReflectionTestUtils.setField(policy, "maxRephrasesPerQuestion", 1);
+    }
+
+    /**
+     * An interview that has taken the given number of turns, none of them probes.
+     *
+     * <p>The rules are now built from the schedule rather than a bare count,
+     * because they have to state the follow-up and rephrase allowance left on
+     * the question currently open as well as the question budget.</p>
+     */
+    /** The budget an unconfigured job runs on: the platform's. */
+    private static final EffectiveInterviewTemplate TEMPLATE = new EffectiveInterviewTemplate(
+            MIN, MAX, InterviewDifficulty.STANDARD, true, false);
+
+    private CandidateInterviewSchedule after(int turns) {
+        CandidateInterviewSchedule schedule = new CandidateInterviewSchedule();
+        schedule.setTotalQuestionsAsked(turns);
+        schedule.setDistinctQuestionsAsked(turns);
+        return schedule;
     }
 
     // ── the ceiling ───────────────────────────────────────────────────
 
     @Test
     void theInterviewRunsOnBelowTheCeiling() {
-        assertFalse(policy.hasReachedCeiling(0));
-        assertFalse(policy.hasReachedCeiling(MAX - 1));
+        assertFalse(policy.hasReachedCeiling(TEMPLATE, 0));
+        assertFalse(policy.hasReachedCeiling(TEMPLATE, MAX - 1));
     }
 
     @Test
     void theCeilingClosesTheInterview() {
-        assertTrue(policy.hasReachedCeiling(MAX), "at the ceiling the interview must close");
-        assertTrue(policy.hasReachedCeiling(MAX + 5),
+        assertTrue(policy.hasReachedCeiling(TEMPLATE, MAX), "at the ceiling the interview must close");
+        assertTrue(policy.hasReachedCeiling(TEMPLATE, MAX + 5),
                 "and stay closed past it — a miscount must not reopen an interview");
     }
 
@@ -51,28 +76,28 @@ class InterviewConductPolicyTest {
 
     @Test
     void theModelCannotCloseBeforeTheFloor() {
-        assertFalse(policy.mayCloseEarly(0));
-        assertFalse(policy.mayCloseEarly(MIN - 1),
+        assertFalse(policy.mayCloseEarly(TEMPLATE, 0));
+        assertFalse(policy.mayCloseEarly(TEMPLATE, MIN - 1),
                 "closing one question short leaves the evaluation with too little to score");
     }
 
     @Test
     void theModelMayCloseAtTheFloor() {
-        assertTrue(policy.mayCloseEarly(MIN));
+        assertTrue(policy.mayCloseEarly(TEMPLATE, MIN));
     }
 
     @Test
     void theFloorNeverExceedsTheCeiling() {
         // Reversed bounds would make every interview close instantly while also
         // being told it may not close.
-        assertTrue(policy.getMinQuestions() <= policy.getMaxQuestions());
+        assertTrue(policy.getDefaultMinQuestions() <= policy.getDefaultMaxQuestions());
     }
 
     // ── what the model is told ────────────────────────────────────────
 
     @Test
     void theRulesStateTheBudgetAndWhatIsLeft() {
-        String rules = policy.asSystemMessage(3);
+        String rules = policy.asSystemMessage(after(3), TEMPLATE);
 
         assertTrue(rules.contains("3 question(s) asked"), "the model needs its position in the interview");
         assertTrue(rules.contains(String.valueOf(MAX - 3)), "and how many it has left");
@@ -80,7 +105,7 @@ class InterviewConductPolicyTest {
 
     @Test
     void belowTheFloorTheModelIsToldNotToClose() {
-        String rules = policy.asSystemMessage(2);
+        String rules = policy.asSystemMessage(after(2), TEMPLATE);
 
         assertTrue(rules.contains("Do not close the interview yet"));
         assertFalse(rules.contains("If you have seen enough"),
@@ -89,7 +114,7 @@ class InterviewConductPolicyTest {
 
     @Test
     void atTheFloorTheModelIsOfferedTheClosingMarker() {
-        String rules = policy.asSystemMessage(MIN);
+        String rules = policy.asSystemMessage(after(MIN), TEMPLATE);
 
         assertTrue(rules.contains(InterviewConductPolicy.COMPLETION_MARKER));
         assertFalse(rules.contains("Do not close the interview yet"));
@@ -101,7 +126,7 @@ class InterviewConductPolicyTest {
         // questions in a turn corrupts the transcript, and an untagged coding
         // question asks for code with no editor to write it in.
         for (int asked : new int[] { 0, MIN, MAX }) {
-            String rules = policy.asSystemMessage(asked);
+            String rules = policy.asSystemMessage(after(asked), TEMPLATE);
             assertTrue(rules.contains("ONE question per reply"), "missing at " + asked);
             assertTrue(rules.contains(InterviewConductPolicy.CODING_TAG), "missing at " + asked);
         }
@@ -109,7 +134,7 @@ class InterviewConductPolicyTest {
 
     @Test
     void theFirstQuestionIsAnIntroduction() {
-        String rules = policy.asSystemMessage(0);
+        String rules = policy.asSystemMessage(after(0), TEMPLATE);
 
         assertTrue(rules.contains("introduce themselves"),
                 "opening cold on a technical question gives a nervous candidate nothing to settle into");
@@ -118,7 +143,7 @@ class InterviewConductPolicyTest {
 
     @Test
     void technicalQuestionsStartRightAfterTheIntroduction() {
-        String rules = policy.asSystemMessage(1);
+        String rules = policy.asSystemMessage(after(1), TEMPLATE);
 
         assertTrue(rules.contains("Move on to technical questions"));
         assertFalse(rules.contains("introduce themselves"),
@@ -127,7 +152,7 @@ class InterviewConductPolicyTest {
 
     @Test
     void theOpeningInstructionsAreGoneOnceTheInterviewIsUnderWay() {
-        String rules = policy.asSystemMessage(5);
+        String rules = policy.asSystemMessage(after(5), TEMPLATE);
 
         assertFalse(rules.contains("introduce themselves"));
         assertFalse(rules.contains("Move on to technical questions"));

@@ -36,6 +36,27 @@ public class CandidateInterviewScheduleDTO {
 	private String evaluationJson;
 	private LocalDateTime startedAt;
 	private LocalDateTime endedAt;
+
+	/**
+	 * Whether the AI's verdict should be looked at before it is acted on.
+	 *
+	 * <p>Read from the schedule's own column rather than out of
+	 * {@link #evaluationJson}, so a list of fifty results does not deserialise
+	 * fifty LONGTEXT blobs to find out which of them are marked.</p>
+	 */
+	private boolean needsHumanReview;
+
+	/**
+	 * The result a person imposed, or null where the AI's stands.
+	 *
+	 * <p>Kept beside {@link #interviewResult} rather than replacing it. A screen
+	 * that shows only the final answer cannot say the machine was overruled,
+	 * which is the part a reviewer opening it next actually needs to know.</p>
+	 */
+	private String overriddenResult;
+
+	/** Who overturned it. Null where nobody did. */
+	private String overriddenBy;
 	   private LocalDate questionsFromDate;
 	    private LocalDate questionsToDate;
 
@@ -68,5 +89,22 @@ public class CandidateInterviewScheduleDTO {
 		this.evaluationJson = entity.getEvaluationJson();
 		this.startedAt = entity.getStartedAt();
 		this.endedAt = entity.getEndedAt();
+		this.needsHumanReview = entity.isNeedsHumanReview();
+	}
+
+	/**
+	 * The same DTO with a reviewer's decision attached.
+	 *
+	 * <p>A second constructor rather than a lookup inside the first: the entity
+	 * does not know about its review, and having the DTO fetch one per row
+	 * would put a query per result behind every list that renders one.</p>
+	 */
+	public CandidateInterviewScheduleDTO(CandidateInterviewSchedule entity,
+			com.rightpath.entity.InterviewReview review) {
+		this(entity);
+		if (review != null && review.getOverriddenResult() != null) {
+			this.overriddenResult = review.getOverriddenResult().name();
+			this.overriddenBy = review.getReviewerEmail();
+		}
 	}
 }

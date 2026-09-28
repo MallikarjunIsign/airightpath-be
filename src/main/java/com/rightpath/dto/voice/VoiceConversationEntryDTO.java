@@ -33,6 +33,10 @@ import com.rightpath.entity.VoiceConversationEntry;
  * @param codeContent            code written for this answer, if any
  * @param codeLanguage           the language it was written in
  * @param codeOutput             what it printed when last run
+ * @param answerScore            the interviewer's 0-10 read on a candidate turn
+ * @param topic                  the category an interviewer turn was asking about
+ * @param turnKind               NEW_QUESTION, FOLLOW_UP or REPHRASE
+ * @param injectionSuspected     set on a candidate turn that tried to instruct the model
  * @param timestamp              when the turn was recorded
  */
 public record VoiceConversationEntryDTO(
@@ -48,6 +52,10 @@ public record VoiceConversationEntryDTO(
         String codeContent,
         String codeLanguage,
         String codeOutput,
+        Integer answerScore,
+        String topic,
+        String turnKind,
+        Boolean injectionSuspected,
         LocalDateTime timestamp) {
 
     /**
@@ -71,6 +79,10 @@ public record VoiceConversationEntryDTO(
                 entry.getCodeContent(),
                 entry.getCodeLanguage(),
                 entry.getCodeOutput(),
+                entry.getAnswerScore(),
+                entry.getTopic(),
+                entry.getTurnKind() != null ? entry.getTurnKind().name() : null,
+                entry.getInjectionSuspected(),
                 entry.getTimestamp());
     }
 }

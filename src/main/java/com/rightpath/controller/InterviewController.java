@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +30,10 @@ import com.rightpath.dto.voice.VoiceConversationEntryDTO;
 import com.rightpath.enums.InterviewRound;
 import com.rightpath.dto.StartInterviewRequest;
 import com.rightpath.dto.StartInterviewResponse;
+import com.rightpath.dto.InterviewReviewDTO;
+import com.rightpath.dto.ProctoringEventDTO;
+import com.rightpath.dto.InterviewReviewRequest;
+import com.rightpath.entity.InterviewReview;
 import com.rightpath.dto.voice.ResumeResponse;
 import com.rightpath.dto.voice.VoiceEvaluationResult;
 import com.rightpath.dto.voice.VoiceSessionStatus;
@@ -73,6 +79,9 @@ public class InterviewController {
 	
 	@Autowired
 	private RoomVerificationService roomVerificationService;
+
+	@Autowired
+	private com.rightpath.service.InterviewReviewService interviewReviewService;
 
 	@PostMapping("/assign-interview")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
@@ -121,16 +130,38 @@ public class InterviewController {
 	public ResponseEntity<?> getResults(@RequestParam(required = false) String jobPrefix,
 			@RequestParam(required = false) InterviewRound round) {
 		List<CandidateInterviewSchedule> results = interviewService.getResults(jobPrefix, round);
-		List<CandidateInterviewScheduleDTO> dtoList = results.stream()
-				.map(CandidateInterviewScheduleDTO::new).toList();
-		return ResponseEntity.ok(dtoList);
+		return ResponseEntity.ok(withReviews(results));
 	}
 
 	@GetMapping("/results/{id}")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<?> getResultDetail(@PathVariable Long id) {
 		CandidateInterviewSchedule schedule = interviewService.getResultDetail(id);
-		return ResponseEntity.ok(new CandidateInterviewScheduleDTO(schedule));
+		return ResponseEntity.ok(new CandidateInterviewScheduleDTO(
+				schedule, interviewReviewService.find(id).orElse(null)));
+	}
+
+	/**
+	 * Results with any reviewer override attached.
+	 *
+	 * <p>Reviews are fetched for the whole page in one query and matched in
+	 * memory. Looking each one up as the DTO is built would put a query per row
+	 * behind a screen that routinely renders fifty.</p>
+	 */
+	private List<CandidateInterviewScheduleDTO> withReviews(List<CandidateInterviewSchedule> schedules) {
+		if (schedules.isEmpty()) {
+			return List.of();
+		}
+		java.util.Map<Long, InterviewReview> byScheduleId = interviewReviewService
+				.findAll(schedules.stream().map(CandidateInterviewSchedule::getId).toList())
+				.stream()
+				.collect(java.util.stream.Collectors.toMap(
+						InterviewReview::getInterviewScheduleId, r -> r, (a, b) -> a));
+
+		return schedules.stream()
+				.map(schedule -> new CandidateInterviewScheduleDTO(
+						schedule, byScheduleId.get(schedule.getId())))
+				.toList();
 	}
 
 	@GetMapping("/active")
@@ -236,11 +267,24 @@ public class InterviewController {
 		return ResponseEntity.ok(voiceInterviewService.resumeInterview(scheduleId));
 	}
 
-	// Item 15/16: Get proctoring events for a schedule
+	/**
+	 * An interview's proctoring events, oldest first.
+	 *
+	 * <p>Projected rather than returned as entities. The event points back at
+	 * its schedule and the schedule holds a list of its events, with neither
+	 * side ignored by Jackson — so serialising one walked the cycle until the
+	 * stack ran out and every call answered 500. Same failure, same fix, as the
+	 * transcript beside it; see {@link ProctoringEventDTO}.</p>
+	 */
 	@GetMapping("/{scheduleId}/proctoring-events")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
-	public ResponseEntity<List<ProctoringEvent>> getProctoringEvents(@PathVariable Long scheduleId) {
-		return ResponseEntity.ok(proctoringEventRepository.findByScheduleIdOrderByTimestampAsc(scheduleId));
+	public ResponseEntity<List<ProctoringEventDTO>> getProctoringEvents(@PathVariable Long scheduleId) {
+		List<ProctoringEventDTO> events = proctoringEventRepository
+				.findByScheduleIdOrderByTimestampAsc(scheduleId)
+				.stream()
+				.map(ProctoringEventDTO::from)
+				.toList();
+		return ResponseEntity.ok(events);
 	}
 
 	// Item 16: Get full conversation transcript for a schedule
@@ -432,5 +476,55 @@ public class InterviewController {
 	    }
 	    interviewQuestionsService.updateInterviewQuestionsWithAI(jobPrefix, categories, totalQuestions);
 	    return ResponseEntity.ok(Map.of("message", "Interview questions updated successfully"));
+	}
+
+	/**
+	 * What a person decided about this interview, if anyone has looked at it.
+	 *
+	 * <p>204 rather than an empty object when nobody has: "not yet reviewed"
+	 * and "reviewed, with nothing to say" are different states, and a screen
+	 * showing the second when it means the first tells a reviewer their
+	 * colleague has already been through it.</p>
+	 */
+	@GetMapping("/{scheduleId}/review")
+	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
+	public ResponseEntity<InterviewReviewDTO> getReview(@PathVariable Long scheduleId) {
+		return interviewReviewService.find(scheduleId)
+				.map(InterviewReviewDTO::from)
+				.map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.noContent().build());
+	}
+
+	/**
+	 * Records a reviewer's notes, and their result if they are overturning it.
+	 *
+	 * <p>Behind INTERVIEW_REVIEW rather than the INTERVIEW_ASSIGN that guards
+	 * reading: changing a finished result is the one action here that alters a
+	 * hiring outcome after the fact, and it should be grantable separately from
+	 * booking interviews and reading their scores.</p>
+	 *
+	 * <p>The reviewer is taken from the authenticated principal. A client-supplied
+	 * author on a record of who overturned a decision records whoever the client
+	 * said it was.</p>
+	 */
+	@PostMapping("/{scheduleId}/review")
+	@PreAuthorize("hasAuthority('INTERVIEW_REVIEW')")
+	public ResponseEntity<InterviewReviewDTO> saveReview(
+			@PathVariable Long scheduleId,
+			@RequestBody InterviewReviewRequest request) {
+
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		String reviewer = (authentication == null || authentication.getName() == null)
+				? "system"
+				: authentication.getName();
+
+		InterviewReview saved = interviewReviewService.save(
+				scheduleId,
+				reviewer,
+				request.getNotes(),
+				request.getOverriddenResult(),
+				request.getOverrideReason());
+
+		return ResponseEntity.ok(InterviewReviewDTO.from(saved));
 	}
 }

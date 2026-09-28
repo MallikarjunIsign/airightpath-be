@@ -59,6 +59,15 @@ public enum PermissionName {
     INTERVIEW_ASSIGN,
     INTERVIEW_START,
     INTERVIEW_ANSWER,
+    /**
+     * Change a finished interview's result, and record why.
+     *
+     * Separate from INTERVIEW_ASSIGN, which is booking and reading. Overturning
+     * an AI decision is the one action here that changes a hiring outcome after
+     * the fact, and it should be grantable to the people who sign off on those
+     * without also handing them scheduling.
+     */
+    INTERVIEW_REVIEW,
 
     // Compiler
     COMPILER_RUN,

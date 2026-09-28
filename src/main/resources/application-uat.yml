@@ -216,6 +216,41 @@ interview:
     min-confidence-score: 30.0
     consecutive-skip-threshold: 2
     consecutive-short-answer-threshold: 3
+  # An incomplete answer and a wrong one need opposite responses, so the
+  # interviewer can press on the same question (follow-up) or put it another way
+  # (rephrase). Both are capped per question: past the cap it stops being an
+  # interview technique and becomes an interrogation of one topic while the rest
+  # of the syllabus goes unasked. Probes spend a turn from questions.max but do
+  # not count towards questions.min — ten follow-ups on one question is not ten
+  # questions' worth of evidence.
+  follow-up:
+    max-per-question: 2
+  rephrase:
+    max-per-question: 1
+  # The next question is pitched from the interviewer's own 0-10 ratings of the
+  # last few answers, not from how fluently they were delivered — a confident
+  # wrong answer scores well on word count and vocal confidence alike. The gap
+  # between the two thresholds stops a candidate hovering near a single cut-off
+  # being pushed harder and easier on alternate questions.
+  difficulty:
+    window: 3
+    min-scored-answers: 2
+    raise-above: 7.5
+    lower-below: 4.5
+  review:
+    # A finished interview is flagged for a person to look at when the grader
+    # says it is unsure, when there was too little said to judge on, when the
+    # interview ended early or on warnings, when the recommendation is one of
+    # the "lean" ones, or when the candidate tried to instruct the interviewer.
+    # 0.7 rather than 0.5: a needless review costs minutes, a missed one costs
+    # a hiring decision taken on a verdict the grader itself doubted.
+    min-confidence: 0.7
+    min-answers: 5
+  topics:
+    # Evaluation categories at or above this weight (%) hold the interview open
+    # until they have been asked about. Lighter ones are not worth blocking a
+    # close for — the score rests mostly on the heavy ones.
+    required-weight-threshold: 10
 
 # Swagger / OpenAPI (enabled in UAT for client testing)
 #   UI: /swagger-ui.html   JSON: /v3/api-docs

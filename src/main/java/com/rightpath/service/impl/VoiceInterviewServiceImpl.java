@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.rightpath.dto.EffectiveInterviewTemplate;
+import com.rightpath.dto.voice.ParsedInterviewReply;
 import com.rightpath.dto.voice.PerformanceSnapshot;
 import com.rightpath.dto.voice.ResumeResponse;
 import com.rightpath.dto.voice.VoiceAnswerRequest;
@@ -31,7 +33,10 @@ import com.rightpath.entity.VoiceConversationEntry;
 import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.CompletionReason;
 import com.rightpath.enums.ConversationRole;
+import com.rightpath.enums.TurnKind;
 import com.rightpath.util.CodingAnswerFormatter;
+import com.rightpath.util.InterviewReplyParser;
+import com.rightpath.util.PromptInjectionGuard;
 import com.rightpath.enums.InterviewResult;
 import com.rightpath.exceptions.ResourceNotFoundException;
 import com.rightpath.repository.CandidateInterviewScheduleRepository;
@@ -41,6 +46,8 @@ import com.rightpath.service.InterviewConductPolicy;
 import com.rightpath.service.InterviewContextService;
 import com.rightpath.service.InterviewEvaluationService;
 import com.rightpath.service.InterviewService;
+import com.rightpath.service.InterviewTemplateService;
+import com.rightpath.service.InterviewTopicCoverage;
 import com.rightpath.service.OpenAiStreamingService;
 import com.rightpath.service.TextToSpeechService;
 import com.rightpath.service.ToneAnalysisService;
@@ -82,6 +89,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     private final SimpMessagingTemplate messagingTemplate;
     private final TransactionTemplate transactionTemplate;
     private final InterviewConductPolicy conductPolicy;
+    private final InterviewReplyParser replyParser;
+    private final InterviewTopicCoverage topicCoverage;
+    private final PromptInjectionGuard injectionGuard;
+    private final InterviewTemplateService templateService;
     private final com.rightpath.repository.UsersRepository usersRepository;
 
     @Value("${interview.max-warnings:5}")
@@ -102,6 +113,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
             SimpMessagingTemplate messagingTemplate,
             TransactionTemplate transactionTemplate,
             InterviewConductPolicy conductPolicy,
+            InterviewReplyParser replyParser,
+            InterviewTopicCoverage topicCoverage,
+            PromptInjectionGuard injectionGuard,
+            InterviewTemplateService templateService,
             com.rightpath.repository.UsersRepository usersRepository) {
         this.scheduleRepo = scheduleRepo;
         this.entryRepository = entryRepository;
@@ -114,6 +129,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         this.messagingTemplate = messagingTemplate;
         this.transactionTemplate = transactionTemplate;
         this.conductPolicy = conductPolicy;
+        this.replyParser = replyParser;
+        this.topicCoverage = topicCoverage;
+        this.injectionGuard = injectionGuard;
+        this.templateService = templateService;
         this.usersRepository = usersRepository;
     }
 
@@ -295,21 +314,17 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         if (schedule.getAttemptStatus() == AttemptStatus.IN_PROGRESS) {
             log.info("Resuming interview {} for {}", schedule.getId(), email);
 
-            String lastQuestion = entryRepository
-                    .findByInterviewScheduleIdOrderByTimestampAsc(schedule.getId())
-                    .stream()
-                    .filter(entry -> entry.getRole() == ConversationRole.INTERVIEWER)
-                    .reduce((first, second) -> second)
-                    .map(VoiceConversationEntry::getContent)
-                    .orElse("Welcome back. Let's carry on where we left off.");
+            String question = resumeQuestion(schedule);
 
             return VoiceStartResponse.builder()
                     .scheduleId(schedule.getId())
-                    .firstQuestion(lastQuestion)
+                    .firstQuestion(question)
                     .interviewerName(schedule.getInterviewerName())
-                    .firstQuestionAudio(isCodeExplanation(lastQuestion)
+                    .firstQuestionAudio(isCodeExplanation(question)
                             ? null
-                            : textToSpeechService.generateTTSBase64(stripQuestionTypeTags(lastQuestion)))
+                            : textToSpeechService.generateTTSBase64(stripQuestionTypeTags(question)))
+                    .resumed(true)
+                    .questionsAsked(schedule.getTotalQuestionsAsked())
                     .build();
         }
 
@@ -317,7 +332,13 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         schedule.setAttemptStatus(AttemptStatus.IN_PROGRESS);
         schedule.setStartedAt(LocalDateTime.now());
         schedule.setTotalQuestionsAsked(0);
-        
+        // Reset alongside the turn count. A re-sit that kept the old counters
+        // would open with its probe allowance already spent and its question
+        // floor already met.
+        schedule.setDistinctQuestionsAsked(0);
+        schedule.setFollowUpsOnCurrentQuestion(0);
+        schedule.setRephrasesOnCurrentQuestion(0);
+
         // ✅ Store the date filters in the schedule (if provided)
         if (fromDate != null) {
             schedule.setQuestionsFromDate(Instant.ofEpochMilli(fromDate).atZone(ZoneOffset.UTC).toLocalDateTime());
@@ -343,23 +364,30 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                     "The interviewer could not be reached to start this interview. Please try again.");
         }
 
+        // Control tags off before anything else touches the text, so the
+        // greeting is merged into speech rather than into a tag block.
+        ParsedInterviewReply parsedFirst = replyParser.parse(generatedQuestion.trim());
+
         // The greeting is the one fixed line in the interview. Merged into the
         // first message so the candidate hears it before the question, rather
         // than being greeted by a question.
-        String firstQuestionRaw = mergeWelcomeWithQuestion(buildWelcome(schedule), generatedQuestion.trim());
+        String firstQuestionRaw = mergeWelcomeWithQuestion(buildWelcome(schedule), parsedFirst.spokenText());
         String firstQuestionClean = stripQuestionTypeTags(firstQuestionRaw);
-        
-      
+
+
 
         // Save interviewer's first question (clean) to the voice conversation table
         VoiceConversationEntry entry = VoiceConversationEntry.builder()
                 .interviewSchedule(schedule)
                 .role(ConversationRole.INTERVIEWER)
                 .content(firstQuestionClean)
+                .topic(parsedFirst.topic())
+                .turnKind(TurnKind.NEW_QUESTION)
                 .build();
         entryRepository.save(entry);
 
         schedule.incrementQuestionsAsked();
+        schedule.recordNewQuestion();
         scheduleRepo.save(schedule);
 
         // Generate TTS for the clean question
@@ -603,10 +631,23 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                 String answerContent = CodingAnswerFormatter.render(
                         request.getTranscript(), request.getCodeContent(),
                         request.getCodeLanguage(), request.getCodeOutput());
+
+                // Neutralised once, here, rather than at each of the four places
+                // that later replay a stored answer into a prompt — the rolling
+                // context window, the running summary, the evaluation transcript
+                // and the reviewer's screen all read from this row, and a guard
+                // applied at any one of them leaves the other three open.
+                boolean injection = injectionGuard.looksLikeInjection(answerContent);
+                if (injection) {
+                    injectionGuard.recordAttempt(scheduleId, answerContent);
+                }
+                answerContent = injectionGuard.stripControlMarkers(answerContent);
+
                 VoiceConversationEntry candidateEntry = VoiceConversationEntry.builder()
                         .interviewSchedule(s)
                         .role(ConversationRole.CANDIDATE)
                         .content(answerContent)
+                        .injectionSuspected(injection)
                         .wordCount(toneMetrics.getWordCount())
                         .wordsPerMinute(toneMetrics.getWordsPerMinute())
                         .fillerWordCount(toneMetrics.getFillerWordCount())
@@ -653,26 +694,68 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                 return;
             }
 
+            ParsedInterviewReply parsed = replyParser.parse(reply);
+
             // Closes when the model says it is done, or when the budget is
             // spent. The ceiling is enforced here rather than trusted to the
             // prompt: an interview that never ends is worse than one cut short.
-            boolean finished = conductPolicy.isClosing(reply)
-                    || conductPolicy.hasReachedCeiling(current.getTotalQuestionsAsked());
-            String spoken = conductPolicy.stripCompletionMarker(reply);
+            EffectiveInterviewTemplate template = templateService.resolve(current);
+            boolean ceilingHit = conductPolicy.hasReachedCeiling(template, current.getTotalQuestionsAsked());
+            boolean finished = parsed.closing() || ceilingHit;
+
+            // A close is held back while material topics are still unasked and
+            // there is budget to ask them. The model decides it has seen enough
+            // from the last few answers, which is not the same as having covered
+            // the syllabus the grader is about to score against — it can only
+            // see the tail of the conversation verbatim. Never overridden once
+            // the ceiling is in sight: running out of questions mid-syllabus is
+            // a configuration problem, and holding the candidate longer does not
+            // fix it.
+            if (parsed.closing() && !ceilingHit) {
+                int remaining = template.maxQuestions() - current.getTotalQuestionsAsked();
+                if (!topicCoverage.mayCloseOnCoverage(current, remaining)) {
+                    ParsedInterviewReply redirected = askForOutstandingTopic(current);
+                    if (redirected != null) {
+                        parsed = redirected;
+                        finished = false;
+                    }
+                }
+            }
+
+            String spoken = parsed.spokenText();
+            ParsedInterviewReply turn = parsed;
+            boolean completed = finished;
 
             transactionTemplate.execute(status -> {
                 CandidateInterviewSchedule s = scheduleRepo.findById(scheduleId).orElseThrow();
+
+                // The rating arrives one turn late: the model judges an answer in
+                // the reply it gives to it. Written back onto the answer it is
+                // about, so difficulty and the reviewer both read it where it
+                // belongs rather than off the question that followed.
+                if (turn.hasScore() && !skipped) {
+                    applyScoreToLastAnswer(s.getId(), turn.answerScore());
+                }
+
                 entryRepository.save(VoiceConversationEntry.builder()
                         .interviewSchedule(s)
                         .role(ConversationRole.INTERVIEWER)
                         .content(spoken)
+                        .topic(turn.hasTopic() ? turn.topic() : null)
+                        .turnKind(turn.turnKind())
                         .build());
-                if (finished) {
+
+                if (completed) {
                     s.setAttemptStatus(AttemptStatus.COMPLETED);
                     s.setEndedAt(LocalDateTime.now());
                 } else {
-                    // Only a question spends budget; a closing remark is not one.
+                    // Every turn spends from the ceiling, probes included —
+                    // otherwise an interview could be stretched indefinitely by
+                    // calling each turn a follow-up. Only a new question counts
+                    // towards the floor, because ten follow-ups on one question
+                    // is not ten questions' worth of evidence.
                     s.incrementQuestionsAsked();
+                    recordTurnKind(s, turn.turnKind());
                 }
                 scheduleRepo.save(s);
                 return null;
@@ -701,6 +784,186 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                     "Sorry, something went wrong on my end. Could you answer again?", false);
         }
     }
+    /**
+     * The question a resumed interview should put to the candidate.
+     *
+     * <p>Which one that is depends on where the connection died, and the two
+     * cases are not the same question:</p>
+     *
+     * <ul>
+     *   <li><b>Interrupted while thinking.</b> The last thing recorded is the
+     *       interviewer's question, unanswered. Ask it again — the candidate
+     *       has just come back to a screen with no context and needs to hear
+     *       what they are answering.</li>
+     *   <li><b>Interrupted between answering and being asked the next.</b> The
+     *       answer is saved; the reply to it was lost in flight, because the
+     *       model call and the socket send both happen after the answer is
+     *       committed. Replaying the last interviewer turn here would ask a
+     *       question they have already answered, and the transcript would carry
+     *       it twice — so the next question is generated now, from a
+     *       conversation that already contains their answer.</li>
+     * </ul>
+     */
+    private String resumeQuestion(CandidateInterviewSchedule schedule) {
+        List<VoiceConversationEntry> entries = entryRepository
+                .findByInterviewScheduleIdOrderByTimestampAsc(schedule.getId());
+
+        VoiceConversationEntry last = entries.isEmpty() ? null : entries.get(entries.size() - 1);
+
+        if (last != null && last.getRole() == ConversationRole.CANDIDATE) {
+            String generated = generateTurnAfterLostReply(schedule);
+            if (generated != null) {
+                return generated;
+            }
+            // The model could not be reached. Falling back to the outstanding
+            // question is better than failing the resume outright: the
+            // candidate answers it again, which is repetitive but recoverable.
+            log.warn("Could not generate the missing turn for interview {}; replaying the last question",
+                    schedule.getId());
+        }
+
+        return entries.stream()
+                .filter(entry -> entry.getRole() == ConversationRole.INTERVIEWER)
+                .reduce((first, second) -> second)
+                .map(VoiceConversationEntry::getContent)
+                .orElse("Welcome back. Let's carry on where we left off.");
+    }
+
+    /**
+     * Produces and records the turn that was lost, or null if it cannot be.
+     *
+     * <p>Goes through the same context path a normal turn uses, so the reply
+     * reacts to the answer already stored and the tags on it are read and
+     * counted exactly as they would have been.</p>
+     */
+    private String generateTurnAfterLostReply(CandidateInterviewSchedule schedule) {
+        try {
+            String reply = openAiStreamingService.chatCompletion(
+                    contextService.buildContextMessages(schedule,
+                            "The candidate's last answer is recorded above, but your reply to it was lost before "
+                                    + "they heard it. Pick the conversation up from there: acknowledge their answer "
+                                    + "briefly and ask what comes next. Do not repeat a question they have already "
+                                    + "answered, and do not mention the interruption."));
+            if (reply == null || reply.isBlank()) {
+                return null;
+            }
+
+            ParsedInterviewReply parsed = replyParser.parse(reply);
+            if (parsed.hasScore()) {
+                applyScoreToLastAnswer(schedule.getId(), parsed.answerScore());
+            }
+            entryRepository.save(VoiceConversationEntry.builder()
+                    .interviewSchedule(schedule)
+                    .role(ConversationRole.INTERVIEWER)
+                    .content(parsed.spokenText())
+                    .topic(parsed.hasTopic() ? parsed.topic() : null)
+                    .turnKind(parsed.turnKind())
+                    .build());
+            schedule.incrementQuestionsAsked();
+            recordTurnKind(schedule, parsed.turnKind());
+            scheduleRepo.save(schedule);
+
+            return parsed.spokenText();
+        } catch (Exception e) {
+            log.warn("Could not rebuild the lost turn for interview {}", schedule.getId(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Puts the rating the model just gave onto the answer it was rating.
+     *
+     * <p>Best effort. A rating that cannot be attached is a slightly worse
+     * difficulty signal on the next turn; failing the turn over it would cost
+     * the candidate an answer.</p>
+     */
+    private void applyScoreToLastAnswer(Long scheduleId, Integer score) {
+        try {
+            entryRepository.findByInterviewScheduleIdOrderByTimestampAsc(scheduleId).stream()
+                    .filter(e -> e.getRole() == ConversationRole.CANDIDATE)
+                    .reduce((first, second) -> second)
+                    .ifPresent(last -> {
+                        last.setAnswerScore(score);
+                        entryRepository.save(last);
+                    });
+        } catch (Exception e) {
+            log.warn("Could not attach the answer score for interview {}", scheduleId, e);
+        }
+    }
+
+    /**
+     * Spends the turn against the right allowance.
+     *
+     * <p>A probe past its budget is counted as a new question rather than
+     * refused. The model has already written the turn and the candidate is about
+     * to hear it — throwing it away would cost them a real question — but
+     * letting it go uncounted would mean the allowance never runs out and the
+     * interview could sit on one topic to the ceiling. Counting it clears the
+     * probe budget and moves the floor, which is the honest reading: the model
+     * chose to stay on this ground, so this is the question now.</p>
+     */
+    private void recordTurnKind(CandidateInterviewSchedule schedule, TurnKind kind) {
+        switch (kind) {
+            case FOLLOW_UP -> {
+                if (conductPolicy.remainingFollowUps(schedule) > 0) {
+                    schedule.recordFollowUp();
+                } else {
+                    log.debug("Follow-up budget spent on interview {}; counting the turn as a new question",
+                            schedule.getId());
+                    schedule.recordNewQuestion();
+                }
+            }
+            case REPHRASE -> {
+                if (conductPolicy.mayRephrase(schedule)) {
+                    schedule.recordRephrase();
+                } else {
+                    log.debug("Rephrase budget spent on interview {}; counting the turn as a new question",
+                            schedule.getId());
+                    schedule.recordNewQuestion();
+                }
+            }
+            case NEW_QUESTION -> schedule.recordNewQuestion();
+        }
+    }
+
+    /**
+     * A replacement turn when a close was held back for topic coverage.
+     *
+     * <p>Costs one extra model call, on the rare turn where the interviewer
+     * tried to finish with material topics unasked. The reply already in hand is
+     * a farewell and cannot be reused for anything else, so there is nothing to
+     * salvage from it.</p>
+     *
+     * <p>Returns null if the second call fails or comes back closing anyway. The
+     * caller then lets the original close stand — an interview that ends a
+     * little early is a far better outcome than one stuck in a loop refusing to
+     * end.</p>
+     */
+    private ParsedInterviewReply askForOutstandingTopic(CandidateInterviewSchedule schedule) {
+        java.util.List<String> outstanding = topicCoverage.outstanding(schedule);
+        if (outstanding.isEmpty()) {
+            return null;
+        }
+        try {
+            log.info("Holding the close on interview {}: {} topic(s) still unasked — {}",
+                    schedule.getId(), outstanding.size(), String.join(", ", outstanding));
+
+            String reply = openAiStreamingService.chatCompletion(
+                    contextService.buildContextMessages(
+                            schedule, topicCoverage.buildCoverageDirective(outstanding)));
+            if (reply == null || reply.isBlank()) {
+                return null;
+            }
+            ParsedInterviewReply parsed = replyParser.parse(reply);
+            // Still trying to close, after being told not to. Taking no for an
+            // answer here is what stops this becoming a loop.
+            return parsed.closing() ? null : parsed;
+        } catch (Exception e) {
+            log.warn("Could not redirect interview {} onto an outstanding topic", schedule.getId(), e);
+            return null;
+        }
+    }
+
     @Override
     @Transactional
     public void endVoiceInterview(Long scheduleId) {
