@@ -36,13 +36,27 @@ public class MobileVerificationController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * Checks the room shot the phone just took.
+     *
+     * <p>Returns why it failed as well as whether it did. The phone showed
+     * "Verification failed. Please reposition the phone." for every outcome —
+     * a second person in frame, a laptop screen out of shot, a blank photo and
+     * an OpenAI outage all looked identical, and only some of those are
+     * something the candidate can act on.</p>
+     */
     @PostMapping("/verify-room")
-    public ResponseEntity<Map<String, Boolean>> verifyRoom(@RequestParam String token,
-                                                           @RequestParam("photo") MultipartFile photo) throws IOException {
-       // logger.info("Received verification request for token: {}, file size: {} bytes", token, photo.getSize());
-        boolean valid = verificationService.verify(photo.getBytes());
-        //logger.info("Verification result for token {}: {}", token, valid);
-        return ResponseEntity.ok(Map.of("valid", valid));
+    public ResponseEntity<Map<String, Object>> verifyRoom(@RequestParam String token,
+                                                          @RequestParam("photo") MultipartFile photo) throws IOException {
+        AiRoomVerificationService.RoomVerificationResult result =
+                verificationService.verify(photo.getBytes());
+
+        return ResponseEntity.ok(Map.of(
+                "valid", result.valid(),
+                "reason", result.reason(),
+                // False means "we could not check", not "you failed" — the phone
+                // offers a retry rather than telling them to move.
+                "checkable", result.checkable()));
     }
 
     @PostMapping("/monitor")

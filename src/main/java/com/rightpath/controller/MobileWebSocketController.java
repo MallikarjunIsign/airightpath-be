@@ -78,6 +78,25 @@ public class MobileWebSocketController {
         }
     }
 
+    /**
+     * The desktop telling the phone the interview is over.
+     *
+     * <p>Without it the phone had no idea. It kept its camera on and its
+     * torch-hot preview running after the interview had finished, and the
+     * candidate was left holding a page that still looked live — so they
+     * either sat there or closed it mid-upload. The phone releases the camera
+     * on this and shows that it is done.</p>
+     */
+    @MessageMapping("/mobile/ended/{token}")
+    public void handleInterviewEnded(@DestinationVariable String token,
+                                     @Payload(required = false) Map<String, Object> payload) {
+        String mobileSession = mobileConnectionService.getMobileSession(token);
+        if (mobileSession != null) {
+            messagingTemplate.convertAndSendToUser(mobileSession, "/queue/mobile/ended",
+                    payload == null ? Map.of("status", "ended") : payload);
+        }
+    }
+
     // ICE candidate exchange
     @MessageMapping("/mobile/ice/{token}")
     public void handleIceCandidate(@DestinationVariable String token, @Payload Map<String, Object> candidate) {
