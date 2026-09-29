@@ -40,6 +40,24 @@ public class JobPostDTO {
 	 * update it must match the stored value (or be omitted), else the request is
 	 * rejected with {@code JOB_PREFIX_IMMUTABLE}.
 	 */
+	/**
+	 * Letters, digits, hyphens and underscores only.
+	 *
+	 * <p>The prefix becomes a path segment on a dozen endpoints
+	 * ({@code /api/prompts/{prefix}}, {@code /api/job-applications/byJobPrefix/{prefix}}
+	 * and the rest), so a character that means something in a URL breaks every
+	 * one of them. A job created as {@code DEV-2026/29} produced the code
+	 * {@code DEV-2026/29-055}, whose slash split one path segment into two —
+	 * and every lookup for that job answered 404 with nothing on screen to
+	 * explain why.</p>
+	 *
+	 * <p>Checked at creation because the code is permanent: applications,
+	 * assessments and evaluation categories all key off it, so a prefix that
+	 * cannot be addressed cannot be repaired without touching all of them.</p>
+	 */
+	@jakarta.validation.constraints.Pattern(
+			regexp = "^[A-Za-z0-9_-]+$",
+			message = "Job prefix may contain only letters, numbers, hyphens and underscores.")
 	private String jobPrefix;
 
 	private String companyName;
