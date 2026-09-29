@@ -41,5 +41,20 @@ public interface StorageService {
 	 * @param downloadName the filename to save as
 	 */
 	String presignedDownloadUrl(String storedReference, String downloadName, java.time.Duration ttl);
+
+	/**
+	 * The size in bytes of a stored object, or empty if it is not there.
+	 *
+	 * <p>Signing a URL does not touch the object — a presigned link to a key
+	 * that was never written looks exactly like one to a real recording, and the
+	 * reviewer finds out only when the player refuses it with "format not
+	 * supported". Checking first turns that into a straight answer about whether
+	 * the recording was saved.</p>
+	 *
+	 * <p>A present-but-empty object is its own failure and the caller needs to
+	 * tell it apart from a missing one, which is why this returns the size
+	 * rather than a boolean.</p>
+	 */
+	java.util.Optional<Long> objectSize(String storedReference);
 	 
 }

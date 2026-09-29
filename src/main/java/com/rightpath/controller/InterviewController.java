@@ -325,6 +325,22 @@ public class InterviewController {
 					+ " recording was stored for this interview.");
 		}
 
+		// The reference is only a string on a row; it says the upload was
+		// *started*, not that anything landed. Signing without checking hands
+		// the reviewer a player that cannot play and no reason why — the browser
+		// reports "format not supported" whether the object is missing, empty or
+		// genuinely corrupt. One HEAD turns all of that into a straight answer.
+		long sizeBytes = storageService.objectSize(reference)
+				.orElseThrow(() -> new com.rightpath.exceptions.ResourceNotFoundException(
+						"The " + (screen ? "screen" : "camera") + " recording for this interview was not saved. "
+								+ "The upload did not complete, so there is nothing to play."));
+
+		if (sizeBytes <= 0) {
+			throw new com.rightpath.exceptions.ResourceNotFoundException(
+					"The " + (screen ? "screen" : "camera") + " recording for this interview is empty. "
+							+ "The upload started but no data arrived.");
+		}
+
 		// Long enough to watch an hour-long interview through, short enough that
 		// a copied link does not become a permanent public one.
 		Duration ttl = Duration.ofHours(2);
@@ -334,7 +350,13 @@ public class InterviewController {
 						"interview-" + scheduleId + "-" + (screen ? "screen" : "camera") + ".webm", ttl)
 				: storageService.presignedUrl(reference, ttl);
 
-		return ResponseEntity.ok(Map.of("url", url, "expiresInSeconds", ttl.toSeconds()));
+		// Size goes back with the link so the player can say how big the file is
+		// — and so a suspiciously small recording is visible before someone
+		// spends time deciding the player is broken.
+		return ResponseEntity.ok(Map.of(
+				"url", url,
+				"expiresInSeconds", ttl.toSeconds(),
+				"sizeBytes", sizeBytes));
 	}
 
 	@GetMapping("/{scheduleId}/conversation")

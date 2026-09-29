@@ -196,6 +196,34 @@ public class S3StorageService implements StorageService {
     }
 
     @Override
+    public java.util.Optional<Long> objectSize(String storedReference) {
+        String key;
+        try {
+            key = keyOf(storedReference);
+        } catch (StorageException e) {
+            // A blank or malformed reference is "nothing stored", not an outage.
+            return java.util.Optional.empty();
+        }
+        try {
+            HeadObjectRequest headReq = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+            return java.util.Optional.ofNullable(s3Client.headObject(headReq).contentLength());
+        } catch (NoSuchKeyException e) {
+            return java.util.Optional.empty();
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                return java.util.Optional.empty();
+            }
+            // A permissions problem or an outage is not the same as a missing
+            // recording, and must not be reported to a reviewer as one.
+            throw new StorageException(
+                    "Failed to read object metadata from S3 [bucket=" + bucketName + ", key=" + key + "]", e);
+        }
+    }
+
+    @Override
     public boolean fileExists(String prefix, String fileName) {
         validateInputs(prefix, fileName);
         try {
