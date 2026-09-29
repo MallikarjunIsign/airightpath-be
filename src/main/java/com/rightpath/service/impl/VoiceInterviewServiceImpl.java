@@ -748,6 +748,13 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                 if (completed) {
                     s.setAttemptStatus(AttemptStatus.COMPLETED);
                     s.setEndedAt(LocalDateTime.now());
+                    // The ordinary ending, and the only one that was never
+                    // recorded. A candidate ending it early, a proctoring
+                    // violation and a timeout all stamped a reason; an
+                    // interview that simply finished stamped nothing, so the
+                    // commonest outcome of all reached the reviewer's screen
+                    // as "how this interview ended was not recorded".
+                    s.setCompletionReason(CompletionReason.NATURAL_COMPLETION);
                 } else {
                     // Every turn spends from the ceiling, probes included —
                     // otherwise an interview could be stretched indefinitely by
