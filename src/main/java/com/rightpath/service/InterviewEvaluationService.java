@@ -280,6 +280,20 @@ public class InterviewEvaluationService {
         }
     }
 
+    /**
+     * A string field, or null where the JSON has none.
+     *
+     * <p>{@code asText()} answers the <em>string</em> "null" for a JSON null,
+     * which is how an interview with nothing to score — recommendation
+     * deliberately left unset by {@link #recordNotAssessable} — reached a
+     * reviewer's screen as a badge reading "null". A missing field does the
+     * same thing.</p>
+     */
+    private String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText();
+    }
+
     /** Keeps a stated confidence inside 0..1 — models do return 85 for "85%". */
     private Double clampConfidence(double raw) {
         double value = raw > 1.0 && raw <= 100.0 ? raw / 100.0 : raw;
@@ -343,10 +357,10 @@ public class InterviewEvaluationService {
             if (scoresNode.isArray()) {
                 for (JsonNode scoreNode : scoresNode) {
                     categoryScores.add(VoiceEvaluationResult.CategoryScore.builder()
-                            .category(scoreNode.path("category").asText())
+                            .category(textOrNull(scoreNode, "category"))
                             .score(scoreNode.path("score").asDouble())
                             .weight(scoreNode.path("weight").asDouble())
-                            .feedback(scoreNode.path("feedback").asText())
+                            .feedback(textOrNull(scoreNode, "feedback"))
                             .build());
                 }
             }
@@ -372,8 +386,8 @@ public class InterviewEvaluationService {
             return VoiceEvaluationResult.builder()
                     .confidence(confidence)
                     .overallScore(node.path("overallScore").asDouble())
-                    .recommendation(node.path("recommendation").asText())
-                    .summary(node.path("summary").asText())
+                    .recommendation(textOrNull(node, "recommendation"))
+                    .summary(textOrNull(node, "summary"))
                     .strengths(strengths)
                     .areasForImprovement(areas)
                     .categoryScores(categoryScores)
