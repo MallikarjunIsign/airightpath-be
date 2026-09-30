@@ -56,6 +56,17 @@ public class CandidateInterviewScheduleDTO {
 	private LocalDateTime endedAt;
 
 	/**
+	 * How the interview ended.
+	 *
+	 * <p>Recorded on the row since timeouts and proctoring violations were
+	 * introduced, and never once sent to the browser — so the results list
+	 * showed "--" in its completion column and the detail screen said "how
+	 * this interview ended was not recorded", for interviews whose reason was
+	 * sitting in the database the whole time.</p>
+	 */
+	private String completionReason;
+
+	/**
 	 * Whether the AI's verdict should be looked at before it is acted on.
 	 *
 	 * <p>Read from the schedule's own column rather than out of
@@ -108,6 +119,9 @@ public class CandidateInterviewScheduleDTO {
 		this.evaluation = parseEvaluation(entity.getEvaluationJson());
 		this.startedAt = entity.getStartedAt();
 		this.endedAt = entity.getEndedAt();
+		this.completionReason = entity.getCompletionReason() != null
+				? entity.getCompletionReason().name()
+				: null;
 		this.needsHumanReview = entity.isNeedsHumanReview();
 	}
 
