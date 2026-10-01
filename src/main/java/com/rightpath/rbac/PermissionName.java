@@ -68,6 +68,15 @@ public enum PermissionName {
      * without also handing them scheduling.
      */
     INTERVIEW_REVIEW,
+    /**
+     * Remove a finished interview's result from the results list.
+     *
+     * Separate again from INTERVIEW_REVIEW: overturning a result argues with
+     * it in public, removing one takes it off the screen people decide from.
+     * Removal is soft and audited, but it is still the most destructive thing
+     * available here and should be grantable on its own.
+     */
+    INTERVIEW_RESULT_DELETE,
 
     // Compiler
     COMPILER_RUN,

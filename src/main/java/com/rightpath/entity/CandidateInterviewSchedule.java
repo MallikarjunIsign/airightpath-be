@@ -168,6 +168,38 @@ public class CandidateInterviewSchedule {
 	private LocalDateTime startedAt;
 	private LocalDateTime endedAt;
 
+	/**
+	 * When this result was removed from the results list; null while it stands.
+	 *
+	 * <p>Removal is soft, for the same reason a job posting's is: the
+	 * transcript, the proctoring events, the recordings and the evaluation
+	 * under this row are the evidence behind a hiring decision, and a hard
+	 * delete would destroy them along with any way of asking later what was
+	 * removed or by whom. The row survives, drops out of the default listing,
+	 * and stays readable to anyone who asks for removed results explicitly.</p>
+	 *
+	 * <p>{@code deletedAt IS NULL} is the liveness test.</p>
+	 */
+	private LocalDateTime deletedAt;
+
+	/** Email of the admin who removed this result; null while it stands. */
+	private String deletedBy;
+
+	/**
+	 * Why it was removed. Required — the endpoint rejects a blank one.
+	 *
+	 * <p>A result that vanished with no reason is the kind of thing that gets
+	 * asked about months later, when nobody remembers whether it was a test
+	 * run, a duplicate or a candidate who asked to be withdrawn.</p>
+	 */
+	@Column(columnDefinition = "TEXT")
+	private String deleteReason;
+
+	/** True while this result still counts. */
+	public boolean isDeleted() {
+		return deletedAt != null;
+	}
+
 	@OneToMany(mappedBy = "interviewSchedule", cascade = CascadeType.ALL, orphanRemoval = true)
 	@Builder.Default
 	@ToString.Exclude

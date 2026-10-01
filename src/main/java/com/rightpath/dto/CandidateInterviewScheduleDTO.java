@@ -101,6 +101,18 @@ public class CandidateInterviewScheduleDTO {
 	/** Human label for the round, so clients need not map the enum. */
 	private String roundLabel;
 
+	/**
+	 * The removal audit: when the result was taken off the list, by whom and
+	 * why. All three are null while the result stands.
+	 *
+	 * <p>Carried on the DTO rather than fetched separately because a removed
+	 * result is only ever shown with its reason attached — a row marked
+	 * "removed" and nothing else is the state this replaced.</p>
+	 */
+	private LocalDateTime deletedAt;
+	private String deletedBy;
+	private String deleteReason;
+
 	public CandidateInterviewScheduleDTO(CandidateInterviewSchedule entity) {
 		this.round = entity.getEffectiveRound().name();
 		this.roundLabel = entity.getEffectiveRound().getDisplayName();
@@ -123,6 +135,9 @@ public class CandidateInterviewScheduleDTO {
 				? entity.getCompletionReason().name()
 				: null;
 		this.needsHumanReview = entity.isNeedsHumanReview();
+		this.deletedAt = entity.getDeletedAt();
+		this.deletedBy = entity.getDeletedBy();
+		this.deleteReason = entity.getDeleteReason();
 	}
 
 	/**

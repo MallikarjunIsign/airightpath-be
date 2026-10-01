@@ -2,6 +2,7 @@ package com.rightpath.controller;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.rightpath.dto.AssignInterviewBulkDTO;
 import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.CandidateInterviewScheduleDTO;
+import com.rightpath.dto.DeleteInterviewResultRequest;
 import com.rightpath.dto.InterviewStatsDTO;
 import com.rightpath.dto.voice.VoiceConversationEntryDTO;
 import com.rightpath.enums.InterviewRound;
@@ -128,9 +131,42 @@ public class InterviewController {
 	@GetMapping("/results")
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<?> getResults(@RequestParam(required = false) String jobPrefix,
-			@RequestParam(required = false) InterviewRound round) {
-		List<CandidateInterviewSchedule> results = interviewService.getResults(jobPrefix, round);
+			@RequestParam(required = false) InterviewRound round,
+			@RequestParam(defaultValue = "false") boolean includeDeleted) {
+		List<CandidateInterviewSchedule> results = interviewService.getResults(jobPrefix, round, includeDeleted);
 		return ResponseEntity.ok(withReviews(results));
+	}
+
+	/**
+	 * Removes a finished interview's result from the results list, with a reason.
+	 *
+	 * <p><strong>Removal is soft.</strong> The row survives with its transcript,
+	 * its proctoring events, its recordings and its evaluation intact; who
+	 * removed it, when and why are recorded on it and shown to anyone who asks
+	 * for removed results. Nothing about a hiring decision is destroyed, which
+	 * is the point — this is a tidying action on a screen, not an erasure.</p>
+	 *
+	 * <p>Behind its own authority rather than INTERVIEW_ASSIGN: taking a result
+	 * off the screen people decide from is a different kind of act from booking
+	 * interviews and reading them.</p>
+	 */
+	@DeleteMapping("/results/{id}")
+	@PreAuthorize("hasAuthority('INTERVIEW_RESULT_DELETE')")
+	public ResponseEntity<?> deleteResult(@PathVariable Long id,
+			@RequestBody DeleteInterviewResultRequest request) {
+		CandidateInterviewSchedule removed = interviewService.deleteResult(id,
+				request == null ? null : request.getReason());
+		return ResponseEntity.ok(new CandidateInterviewScheduleDTO(
+				removed, interviewReviewService.find(id).orElse(null)));
+	}
+
+	/** Puts a removed result back. The counterpart to {@link #deleteResult}. */
+	@PostMapping("/results/{id}/restore")
+	@PreAuthorize("hasAuthority('INTERVIEW_RESULT_DELETE')")
+	public ResponseEntity<?> restoreResult(@PathVariable Long id) {
+		CandidateInterviewSchedule restored = interviewService.restoreResult(id);
+		return ResponseEntity.ok(new CandidateInterviewScheduleDTO(
+				restored, interviewReviewService.find(id).orElse(null)));
 	}
 
 	@GetMapping("/results/{id}")
@@ -310,20 +346,38 @@ public class InterviewController {
 	@PreAuthorize("hasAuthority('INTERVIEW_ASSIGN')")
 	public ResponseEntity<Map<String, Object>> getRecordingLink(@PathVariable Long scheduleId,
 			@RequestParam(defaultValue = "camera") String kind,
-			@RequestParam(defaultValue = "inline") String disposition) {
+			@RequestParam(defaultValue = "inline") String disposition,
+			@RequestParam(defaultValue = "0") int part) {
 
 		CandidateInterviewSchedule schedule = interviewService.getResultDetail(scheduleId);
 
 		boolean screen = "screen".equalsIgnoreCase(kind);
-		String reference = screen ? schedule.getScreenRecordReferences() : schedule.getRecordReferences();
+		String stored = screen ? schedule.getScreenRecordReferences() : schedule.getRecordReferences();
 
-		if (reference == null || reference.isBlank()) {
+		if (stored == null || stored.isBlank()) {
 			// A 404 rather than an empty 200: "never recorded" is a different
 			// thing from "here is a link to nothing", and the reviewer's screen
 			// says which.
 			throw new com.rightpath.exceptions.ResourceNotFoundException("No " + (screen ? "screen" : "camera")
 					+ " recording was stored for this interview.");
 		}
+
+		// A screen recording may be several files: sharing can stop and be
+		// picked up again mid-interview, and each share is stored separately
+		// because concatenated WebM plays only as far as the first boundary.
+		// Older rows hold a single reference and split to a list of one, so
+		// nothing recorded before this needs migrating.
+		List<String> references = Arrays.stream(stored.split("\\R"))
+				.map(String::trim)
+				.filter(ref -> !ref.isEmpty())
+				.toList();
+
+		if (part < 0 || part >= references.size()) {
+			throw new com.rightpath.exceptions.ResourceNotFoundException(
+					"This interview has " + references.size() + " " + (screen ? "screen" : "camera")
+							+ " recording part(s); part " + (part + 1) + " does not exist.");
+		}
+		String reference = references.get(part);
 
 		// The reference is only a string on a row; it says the upload was
 		// *started*, not that anything landed. Signing without checking hands
@@ -347,16 +401,22 @@ public class InterviewController {
 
 		String url = "attachment".equalsIgnoreCase(disposition)
 				? storageService.presignedDownloadUrl(reference,
-						"interview-" + scheduleId + "-" + (screen ? "screen" : "camera") + ".webm", ttl)
+						"interview-" + scheduleId + "-" + (screen ? "screen" : "camera")
+								+ (references.size() > 1 ? "-part" + (part + 1) : "") + ".webm", ttl)
 				: storageService.presignedUrl(reference, ttl);
 
 		// Size goes back with the link so the player can say how big the file is
 		// — and so a suspiciously small recording is visible before someone
 		// spends time deciding the player is broken.
+		// `parts` goes back so the reviewer's player can offer the rest. Without
+		// it a two-part recording looks like a short one that cuts off, and the
+		// gap in the middle is exactly what a reviewer needs to notice.
 		return ResponseEntity.ok(Map.of(
 				"url", url,
 				"expiresInSeconds", ttl.toSeconds(),
-				"sizeBytes", sizeBytes));
+				"sizeBytes", sizeBytes,
+				"part", part,
+				"parts", references.size()));
 	}
 
 	@GetMapping("/{scheduleId}/conversation")

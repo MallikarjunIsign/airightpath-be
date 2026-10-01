@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -130,6 +131,25 @@ class InterviewConductPolicyTest {
             assertTrue(rules.contains("ONE question per reply"), "missing at " + asked);
             assertTrue(rules.contains(InterviewConductPolicy.CODING_TAG), "missing at " + asked);
         }
+    }
+
+    @Test
+    @DisplayName("the coding tag is in the tag list the model is given, not only in the rules")
+    void theTagListIncludesCoding() {
+        // The list is prefaced "put these at the very start of your reply",
+        // which a model reads as the complete set. Leaving [CODING] out of it
+        // while a numbered rule elsewhere asked for it meant the tag stopped
+        // being emitted: the editor never opened, and candidates were asked to
+        // write code with nowhere to write it.
+        String rules = policy.asSystemMessage(after(3), TEMPLATE);
+
+        int tagsSection = rules.indexOf("Tags.");
+        assertTrue(tagsSection >= 0, "the tag protocol should be in the prompt");
+
+        String tags = rules.substring(tagsSection);
+        assertTrue(tags.contains(InterviewConductPolicy.CODING_TAG),
+                "[CODING] must be listed with the other tags, or the model drops it");
+        assertTrue(tags.contains("[SCORE:"), "sanity: the list still describes the score tag");
     }
 
     @Test

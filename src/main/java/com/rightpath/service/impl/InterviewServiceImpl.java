@@ -38,6 +38,7 @@ import com.rightpath.service.StorageService;
 import com.rightpath.util.StatusTransitionValidator;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class InterviewServiceImpl implements InterviewService {
 
 	@Value("${aws.s3.prefix.interview:interview}")
@@ -478,7 +479,19 @@ public class InterviewServiceImpl implements InterviewService {
 
 		String screenUrl = storageService.uploadFile(interviewPrefix, blobName, screenFile);
 
-		schedule.setScreenRecordReferences(screenUrl);
+		// Appended, not replaced. Screen sharing can stop and be picked up
+		// again mid-interview, and each share is uploaded as its own file:
+		// every MediaRecorder run emits a complete WebM with its own header,
+		// so joining them would leave a recording that plays only as far as
+		// the first boundary. Overwriting instead kept the last part and threw
+		// away everything the candidate did before they stopped sharing.
+		//
+		// Newline-separated because a stored reference is a key built from the
+		// uploaded file's own name, which may contain a comma but cannot
+		// contain a line break.
+		String existing = schedule.getScreenRecordReferences();
+		schedule.setScreenRecordReferences(
+				(existing == null || existing.isBlank()) ? screenUrl : existing + "\n" + screenUrl);
 		scheduleRepo.save(schedule);
 
 		return screenUrl;
@@ -492,19 +505,88 @@ public class InterviewServiceImpl implements InterviewService {
 
 	@Override
 	public List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round) {
+		return getResults(jobPrefix, round, false);
+	}
+
+	@Override
+	public List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round,
+			boolean includeDeleted) {
 		List<CandidateInterviewSchedule> all = (jobPrefix != null && !jobPrefix.isBlank())
 				? scheduleRepo.findAllByJobPrefix(jobPrefix)
 				: scheduleRepo.findAll();
 
-		if (round == null) {
-			return all;
-		}
 		// getEffectiveRound(), not getRound(): a null column reads as the default
 		// round, so pre-rounds interviews stay visible under L2 instead of
 		// disappearing from every filter.
 		return all.stream()
-				.filter(schedule -> schedule.getEffectiveRound() == round)
+				.filter(schedule -> includeDeleted || !schedule.isDeleted())
+				.filter(schedule -> round == null || schedule.getEffectiveRound() == round)
 				.toList();
+	}
+
+	@Override
+	@Transactional
+	public CandidateInterviewSchedule deleteResult(Long id, String reason) {
+		String trimmed = reason == null ? "" : reason.trim();
+		if (trimmed.isEmpty()) {
+			// Refused rather than defaulted. A reason that the system made up
+			// is worse than no reason, because it reads like one somebody gave.
+			throw new IllegalArgumentException("A reason is required to remove an interview result.");
+		}
+
+		CandidateInterviewSchedule schedule = scheduleRepo.findById(id)
+				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
+
+		if (schedule.isDeleted()) {
+			// Not idempotent on purpose: overwriting would replace the original
+			// reason and the original remover with whoever clicked last.
+			throw new IllegalStateException("This interview result has already been removed.");
+		}
+
+		schedule.setDeletedAt(LocalDateTime.now());
+		schedule.setDeletedBy(actingUser());
+		schedule.setDeleteReason(trimmed);
+		CandidateInterviewSchedule saved = scheduleRepo.save(schedule);
+
+		// Deliberately loud, and at info: this hides a hiring decision's
+		// evidence from the screen people make decisions on.
+		log.info("Interview result {} ({} / {}) removed by {}: {}", saved.getId(), saved.getJobPrefix(),
+				saved.getEmail(), saved.getDeletedBy(), trimmed);
+		return saved;
+	}
+
+	@Override
+	@Transactional
+	public CandidateInterviewSchedule restoreResult(Long id) {
+		CandidateInterviewSchedule schedule = scheduleRepo.findById(id)
+				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
+
+		if (!schedule.isDeleted()) {
+			throw new IllegalStateException("This interview result has not been removed.");
+		}
+
+		String previousReason = schedule.getDeleteReason();
+		String previousRemover = schedule.getDeletedBy();
+		schedule.setDeletedAt(null);
+		schedule.setDeletedBy(null);
+		schedule.setDeleteReason(null);
+		CandidateInterviewSchedule saved = scheduleRepo.save(schedule);
+
+		// The row no longer carries the removal, so the log is the only record
+		// that it happened at all. It says what is being undone.
+		log.info("Interview result {} ({} / {}) restored by {}; had been removed by {}: {}", saved.getId(),
+				saved.getJobPrefix(), saved.getEmail(), actingUser(), previousRemover, previousReason);
+		return saved;
+	}
+
+	/**
+	 * Email of the authenticated admin, as set by the JWT filter. Falls back to
+	 * "system" for non-request callers so the audit line is never blank.
+	 */
+	private static String actingUser() {
+		org.springframework.security.core.Authentication authentication = org.springframework.security.core.context.SecurityContextHolder
+				.getContext().getAuthentication();
+		return (authentication == null || authentication.getName() == null) ? "system" : authentication.getName();
 	}
 
 	@Override

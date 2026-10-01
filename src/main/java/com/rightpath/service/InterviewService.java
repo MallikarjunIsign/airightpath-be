@@ -53,7 +53,41 @@ public interface InterviewService {
 	 */
 	List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round);
 
+	/**
+	 * Interviews on a job, optionally narrowed to one round, optionally
+	 * including results an admin has removed.
+	 *
+	 * <p>Removed results are excluded by default. They are not gone — removal
+	 * is soft and audited — but a results screen that still lists them is a
+	 * results screen that was not cleaned up.</p>
+	 *
+	 * @param includeDeleted true to list removed results alongside live ones
+	 */
+	List<CandidateInterviewSchedule> getResults(String jobPrefix, com.rightpath.enums.InterviewRound round,
+			boolean includeDeleted);
+
 	CandidateInterviewSchedule getResultDetail(Long id);
+
+	/**
+	 * Remove a finished interview's result from the listing, with a reason.
+	 *
+	 * <p>Soft: the row, its transcript, its proctoring events and its
+	 * recordings all survive, and who removed it and why are recorded on it.
+	 * Removing an already-removed result is rejected rather than silently
+	 * overwriting the first reason.</p>
+	 *
+	 * @param reason why it is being removed; required and non-blank
+	 * @return the row as it now stands
+	 */
+	CandidateInterviewSchedule deleteResult(Long id, String reason);
+
+	/**
+	 * Put a removed result back, with a reason recorded in the log.
+	 *
+	 * <p>The counterpart to {@link #deleteResult}: removal is an admin action
+	 * taken in a hurry on a live screen, and a mistake must not be permanent.</p>
+	 */
+	CandidateInterviewSchedule restoreResult(Long id);
 
 	String prepareQuestionsAndCreateSession(String jobPrefix, String email, Long scheduleId);
 
