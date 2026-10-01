@@ -36,7 +36,22 @@ public class MobileWebSocketController {
         }
     }
 
-    // Mobile registers with token
+    /**
+     * Mobile registers with token.
+     *
+     * <p>Both sides are told, and that is the fix for a pairing that only
+     * worked by luck. The phone does not open its camera until it receives a
+     * {@code ready}; it was only ever sent one when the <em>desktop</em>
+     * registered. In the order this actually happens — the interview page is
+     * open first, the candidate then picks up their phone and scans the code —
+     * the desktop had already registered and gone quiet, so the phone sat
+     * waiting for a signal that had been sent before it was listening. The
+     * desktop meanwhile heard "mobile ready", said "Phone connected" and
+     * showed an empty preview for the rest of the interview.</p>
+     *
+     * <p>Whichever side registers second now unblocks the other, so the
+     * handshake no longer depends on who got there first.</p>
+     */
     @MessageMapping("/mobile/register")
     public void registerMobile(@Payload Map<String, String> payload,
                                org.springframework.messaging.simp.SimpMessageHeaderAccessor headerAccessor) {
@@ -48,6 +63,30 @@ public class MobileWebSocketController {
         String desktopSession = mobileConnectionService.getDesktopSession(token);
         if (desktopSession != null) {
             messagingTemplate.convertAndSendToUser(desktopSession, "/queue/mobile/ready", Map.of("status", "ready"));
+            // ...and the phone, which is the side that acts on it. A desktop
+            // already waiting is the whole reason the candidate was given a
+            // code to scan.
+            messagingTemplate.convertAndSendToUser(sessionId, "/queue/mobile/ready", Map.of("status", "ready"));
+        }
+    }
+
+    /**
+     * The desktop nudging the phone to start streaming.
+     *
+     * <p>The interview page has always sent this a second after it subscribes,
+     * and it has always been dropped: there was no handler for the
+     * destination, so Spring discarded the message and logged nothing the
+     * client could see. It is the retry path — if the first handshake is
+     * missed because one side reconnected, this is what starts the stream
+     * without the candidate having to scan the code again.</p>
+     */
+    @MessageMapping("/mobile/ready/{token}")
+    public void handleReady(@DestinationVariable String token,
+                            @Payload(required = false) Map<String, Object> payload) {
+        String mobileSession = mobileConnectionService.getMobileSession(token);
+        if (mobileSession != null) {
+            messagingTemplate.convertAndSendToUser(mobileSession, "/queue/mobile/ready",
+                    payload == null ? Map.of("status", "ready") : payload);
         }
     }
 
