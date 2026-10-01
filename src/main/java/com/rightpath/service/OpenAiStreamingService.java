@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rightpath.util.TranscriptionResult;
+import com.rightpath.util.TranscriptionSanitizer;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -219,17 +220,42 @@ public class OpenAiStreamingService {
                 String responseBody = response.body().string();
                 JsonNode node = objectMapper.readTree(responseBody);
 
-                String text = node.path("text").asText("");
+                // Whisper does not return an empty string for audio with no
+                // speech in it — it returns a fluent sentence borrowed from the
+                // subtitled video it was trained on, and that sentence lands in
+                // the transcript as something the candidate said. The per-
+                // segment statistics needed to catch it were already being
+                // fetched here and discarded.
+                TranscriptionSanitizer.Sanitized sanitized = TranscriptionSanitizer.sanitize(node);
+                String text = sanitized.text();
                 double duration = node.path("duration").asDouble(0);
+
+                if (!sanitized.rejected().isEmpty()) {
+                    // At info, not debug. When a candidate says their answer
+                    // was cut short this log is the only record of what was
+                    // taken out and on what grounds.
+                    log.info("Dropped {} non-speech segment(s) from {}: {}",
+                            sanitized.rejected().size(), filename, String.join("; ", sanitized.rejected()));
+                }
 
                 List<TranscriptionResult.Word> words = new ArrayList<>();
                 JsonNode wordsNode = node.path("words");
                 if (wordsNode.isArray()) {
                     for (JsonNode wordNode : wordsNode) {
+                        double start = wordNode.path("start").asDouble();
+                        double end = wordNode.path("end").asDouble();
+                        // Words from a discarded segment go with it. Speaking
+                        // rate and filler counts are computed from these and
+                        // are part of what the candidate is scored on, so
+                        // keeping them would put the invented sentence back
+                        // into the evaluation after removing it from the text.
+                        if (!TranscriptionSanitizer.isWithin(sanitized.keptSpans(), start, end)) {
+                            continue;
+                        }
                         words.add(new TranscriptionResult.Word(
                                 wordNode.path("word").asText(),
-                                wordNode.path("start").asDouble(),
-                                wordNode.path("end").asDouble()
+                                start,
+                                end
                         ));
                     }
                 }
