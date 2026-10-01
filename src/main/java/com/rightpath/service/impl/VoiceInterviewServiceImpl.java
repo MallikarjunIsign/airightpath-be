@@ -792,6 +792,19 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         }
     }
     /**
+     * When a timed-out interview should be recorded as having ended.
+     *
+     * <p>Its start plus the configured limit. The query that found it only
+     * returns interviews already past that point, so this is never in the
+     * future. Falls back to the current time for a row with no start recorded,
+     * which cannot be placed any better.</p>
+     */
+    private LocalDateTime expiryOf(CandidateInterviewSchedule schedule) {
+        LocalDateTime startedAt = schedule.getStartedAt();
+        return startedAt == null ? LocalDateTime.now() : startedAt.plusMinutes(maxDurationMinutes);
+    }
+
+    /**
      * The question a resumed interview should put to the candidate.
      *
      * <p>Which one that is depends on where the connection died, and the two
@@ -1044,7 +1057,18 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         for (CandidateInterviewSchedule schedule : staleInterviews) {
             log.warn("Auto-completing stale interview {} (started at {})", schedule.getId(), schedule.getStartedAt());
             schedule.setAttemptStatus(AttemptStatus.COMPLETED);
-            schedule.setEndedAt(LocalDateTime.now());
+            // The moment it was actually over, not the moment this sweep
+            // happened to notice.
+            //
+            // This stamped `now`, so the recorded length was however long the
+            // row sat unclosed — the sweep runs every five minutes, but an
+            // application restart or an overnight outage leaves it far longer.
+            // One real interview was recorded as 774 minutes: an hour of
+            // interview and twelve hours of nobody looking. The duration is
+            // read as "time in interview" on the result screen and summed
+            // across sittings, so a single stale row made the whole candidate
+            // look absurd.
+            schedule.setEndedAt(expiryOf(schedule));
             schedule.setCompletionReason(CompletionReason.TIMEOUT);
             scheduleRepo.save(schedule);
 
