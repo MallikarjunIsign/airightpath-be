@@ -12,6 +12,12 @@ server:
     connection-timeout: 120s
     keep-alive-timeout: 300s
     max-http-form-post-size: 104857600
+    # Read and discard the body of a rejected upload instead of resetting the
+    # connection. Tomcat stops reading at 2MB by default, so an oversize
+    # recording never got its 413 back — the browser saw a reset mid-request
+    # and reported a CORS failure, which sent the investigation somewhere else
+    # entirely. -1 means read it all, so the real status reaches the client.
+    max-swallow-size: -1
     max-http-header-size: 65536
     threads:
       max: 200
@@ -52,8 +58,19 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 500MB
-      max-request-size: 500MB
+      # Sized for the longest interview the timer allows. 60 minutes of shared
+      # screen at the capped bitrate is ~704 MB (1.5 Mbit video + 64 kbit audio
+      # over 3600 s) and the camera is ~337 MB; 500MB cut the screen off at
+      # roughly 42 minutes, and it failed at the very end of the interview with
+      # the whole recording already captured and nowhere to put it. 2 GB leaves
+      # room for a longer session or a higher bitrate, and stays well under
+      # S3's 5 GB single-PUT ceiling.
+      max-file-size: 2048MB
+      max-request-size: 2048MB
+      # Spill to disk immediately rather than buffering in heap. This is
+      # already Spring's default; stated because the value that is wrong here
+      # costs a gigabyte of heap per concurrent upload.
+      file-size-threshold: 0
   websocket:
     session:
       timeout: 0
@@ -198,6 +215,11 @@ ats:
 interview:
   max-duration-minutes: 60
   max-warnings: 5
+  # Reaching max-warnings does NOT end the interview; it flags it for a
+  # person to look at. Ending one on a count is a hiring decision made by a
+  # threshold, and the signals feeding the count are not good enough to carry
+  # it. Set true to restore automatic termination.
+  terminate-on-max-warnings: false
   context-window-size: 4
   # How many questions a dynamic interview asks. The model writes every question
   # from the conversation so far, so it needs a floor (enough signal to score

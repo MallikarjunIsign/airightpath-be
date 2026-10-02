@@ -490,8 +490,17 @@ public class AssessmentController {
         Long assessmentId = Long.parseLong(request.get("assessmentId").toString());
       //  String jobPrefix = (String) request.get("jobPrefix");
 
-        assessmentService.markExamAsAttended(candidateEmail, assessmentId);
-        return ResponseEntity.ok().build();
+        LocalDateTime startedAt = assessmentService.markExamAsAttended(candidateEmail, assessmentId);
+
+        // The start instant goes back so the paper counts down to a fixed
+        // moment rather than restarting from the full duration on every load.
+        // It is stamped once, on the first attendance, so a candidate who
+        // reloads at the ninety-minute mark gets the same answer they would
+        // have got ninety minutes ago — reloading used to buy a whole fresh
+        // paper's worth of time.
+        Map<String, Object> body = new HashMap<>();
+        body.put("examStartedAt", startedAt);
+        return ResponseEntity.ok(body);
     }
 
 	

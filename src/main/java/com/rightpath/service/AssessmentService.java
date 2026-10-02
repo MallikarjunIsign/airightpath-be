@@ -158,7 +158,14 @@ public interface AssessmentService {
      * 
      * Developer Note: Log candidateEmail, assessmentId, and attendance timestamp.
      */
-    void markExamAsAttended(String candidateEmail, Long assessmentId);
+    /**
+     * Records that a candidate has opened their paper, and says when they did.
+     *
+     * @return the instant the exam was first opened, stamped once and
+     *         unchanged by later calls — so a reload reports attendance again
+     *         without moving the clock
+     */
+    java.time.LocalDateTime markExamAsAttended(String candidateEmail, Long assessmentId);
 
     /**
      * Moves the exam window of a paper the candidate has not sat yet.

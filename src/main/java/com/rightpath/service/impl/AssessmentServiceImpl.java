@@ -650,7 +650,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 
 	}
 
-	public void markExamAsAttended(String email, Long assessmentId) {
+	public LocalDateTime markExamAsAttended(String email, Long assessmentId) {
 		Optional<Assessment> assessmentOpt = assessmentRepository.findById(assessmentId);
 		if (assessmentOpt.isEmpty()) {
 			throw new ResourceNotFoundException("Assessment not found with ID: " + assessmentId);
@@ -686,6 +686,10 @@ public class AssessmentServiceImpl implements AssessmentService {
 		// Sent once, not once per application row — a candidate holding two rows for
 		// the same job was mailed twice for a single submission.
 		sendSubmissionEmail(assessment);
+
+		// The stamped start, so the paper's clock can count down to a fixed
+		// moment instead of starting a fresh countdown on every load.
+		return assessment.getExamStartedAt();
 	}
 
 	@Override

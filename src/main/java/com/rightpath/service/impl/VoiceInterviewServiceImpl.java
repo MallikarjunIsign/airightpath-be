@@ -98,6 +98,25 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Value("${interview.max-warnings:5}")
     private int maxWarnings;
 
+    /**
+     * Whether reaching {@link #maxWarnings} ends the interview.
+     *
+     * <p>Off. Ending an interview on a count is a hiring decision made by a
+     * threshold, and the signals feeding that count are not good enough to
+     * carry it: a candidate who looked away from the camera five times was
+     * marked {@code FAILED} with {@code PROCTORING_VIOLATION} and had no
+     * further say. The warnings are still counted, still recorded against the
+     * interview, and now flag it for a person to look at — which is the
+     * decision a person should be making.</p>
+     *
+     * <p>The candidate's screen made this worse than it needed to be: it
+     * showed the count against a ceiling of 999999 while the server was
+     * terminating at five, so the one warning that mattered looked like
+     * nothing.</p>
+     */
+    @Value("${interview.terminate-on-max-warnings:false}")
+    private boolean terminateOnMaxWarnings;
+
     @Value("${interview.max-duration-minutes:60}")
     private int maxDurationMinutes;
 
@@ -325,6 +344,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                             : textToSpeechService.generateTTSBase64(stripQuestionTypeTags(question)))
                     .resumed(true)
                     .questionsAsked(schedule.getTotalQuestionsAsked())
+                    // The original deadline, not a fresh one. A refresh used
+                    // to restart the browser's countdown from the full
+                    // duration, so reloading was a way to buy another hour.
+                    .expiresAt(expiryOf(schedule))
                     .build();
         }
 
@@ -403,6 +426,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                 .firstQuestion(firstQuestionRaw)      // raw with tags for frontend detection
                 .interviewerName(schedule.getInterviewerName())
                 .firstQuestionAudio(firstQuestionAudio)   // null for code explanation
+                // The same instant the server times the interview out against,
+                // so the clock on the candidate's screen and the one that
+                // actually ends the interview cannot disagree.
+                .expiresAt(expiryOf(schedule))
                 .build();
     }
 
@@ -1008,9 +1035,23 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 
         schedule.addWarning();
+
+        boolean overThreshold = schedule.getWarningCount() >= maxWarnings;
+
+        if (overThreshold && !terminateOnMaxWarnings) {
+            // Flagged, not failed. The count still means something — it is
+            // the reason a person should watch this recording before acting
+            // on the result — but the machine does not get to decide it.
+            if (!schedule.isNeedsHumanReview()) {
+                log.warn("Schedule {} passed {} proctoring warnings; flagged for human review",
+                        scheduleId, maxWarnings);
+            }
+            schedule.setNeedsHumanReview(true);
+        }
+
         scheduleRepo.save(schedule);
 
-        if (schedule.getWarningCount() >= maxWarnings) {
+        if (overThreshold && terminateOnMaxWarnings) {
             schedule.setAttemptStatus(AttemptStatus.COMPLETED);
             schedule.setInterviewResult(InterviewResult.FAILED);
             schedule.setEndedAt(LocalDateTime.now());

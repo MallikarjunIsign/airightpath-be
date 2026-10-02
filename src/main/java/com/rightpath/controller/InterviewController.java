@@ -28,6 +28,7 @@ import com.rightpath.dto.AssignInterviewBulkDTO;
 import com.rightpath.dto.AssignInterviewDTO;
 import com.rightpath.dto.CandidateInterviewScheduleDTO;
 import com.rightpath.dto.DeleteInterviewResultRequest;
+import com.rightpath.dto.RecordingOutcomeRequest;
 import com.rightpath.dto.InterviewStatsDTO;
 import com.rightpath.dto.voice.VoiceConversationEntryDTO;
 import com.rightpath.enums.InterviewRound;
@@ -47,6 +48,7 @@ import com.rightpath.entity.RoomVerificationSession;
 import com.rightpath.entity.VoiceConversationEntry;
 import com.rightpath.enums.AttemptStatus;
 import com.rightpath.enums.InterviewResult;
+import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.ProctoringEventRepository;
 import com.rightpath.repository.VoiceConversationEntryRepository;
 import com.rightpath.service.InterviewQuestionsService;
@@ -77,6 +79,9 @@ public class InterviewController {
 	private VoiceInterviewService voiceInterviewService;
 	@Autowired
 	private ProctoringEventRepository proctoringEventRepository;
+
+	@Autowired
+	private CandidateInterviewScheduleRepository scheduleRepo;
 	@Autowired
 	private VoiceConversationEntryRepository voiceConversationEntryRepository;
 	
@@ -321,6 +326,74 @@ public class InterviewController {
 				.map(ProctoringEventDTO::from)
 				.toList();
 		return ResponseEntity.ok(events);
+	}
+
+	/**
+	 * Records what became of one of an interview's recordings.
+	 *
+	 * <p>Over HTTP, deliberately. The same report already goes over the
+	 * interview WebSocket, but the failures most worth auditing — the
+	 * candidate's connection dropping, the upload timing out — are the ones
+	 * that have usually taken the socket with them, so the record of them
+	 * never arrived. An audit that only survives when nothing went wrong is
+	 * not an audit.</p>
+	 *
+	 * <p>Saved whatever the outcome. "No recording" and "a recording that did
+	 * not survive the upload" look identical on a reviewer's screen otherwise,
+	 * and only one of them is the candidate's doing. Never counts towards the
+	 * proctoring warnings that fail an interview: a failed upload is the
+	 * network, not conduct.</p>
+	 *
+	 * <p>Idempotent in the way that matters — the client retries this call
+	 * until it lands, so duplicates are possible and are harmless. Two
+	 * identical audit lines are a far better outcome than none.</p>
+	 */
+	@PostMapping("/{scheduleId}/recording-outcome")
+	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
+	public ResponseEntity<Void> recordRecordingOutcome(@PathVariable Long scheduleId,
+			@RequestBody RecordingOutcomeRequest request) {
+
+		String kind = request.getKind() == null ? "recording" : request.getKind();
+		String eventType = request.isSuccess() ? "recording_uploaded" : "recording_upload_failed";
+
+		StringBuilder details = new StringBuilder();
+		details.append(kind).append(" recording ");
+		details.append(request.isSuccess() ? "saved" : "was not saved");
+		details.append(" (").append(Math.round(request.getBytes() / 1024.0)).append(" KB");
+		if (request.getParts() > 1) {
+			details.append(", ").append(request.getParts()).append(" parts");
+		}
+		if (request.getAttempts() > 1) {
+			// The attempt count is the signal that the candidate's connection
+			// was struggling, which is worth knowing even when it succeeded in
+			// the end.
+			details.append(", ").append(request.getAttempts()).append(" attempts");
+		}
+		details.append(')');
+		if (!request.isSuccess() && request.getFailureReason() != null && !request.getFailureReason().isBlank()) {
+			details.append(": ").append(request.getFailureReason().trim());
+		}
+
+		try {
+			proctoringEventRepository.save(ProctoringEvent.builder()
+					.schedule(scheduleRepo.getReferenceById(scheduleId))
+					.eventType(eventType)
+					.details(details.toString())
+					.build());
+		} catch (Exception e) {
+			// Reported, not thrown. The client is in its end-of-interview
+			// flow and a failure to file the audit must not also cost the
+			// candidate their completion.
+			log.error("Failed to record the {} recording outcome for schedule {}", kind, scheduleId, e);
+			return ResponseEntity.ok().build();
+		}
+
+		if (request.isSuccess()) {
+			log.info("Schedule {}: {}", scheduleId, details);
+		} else {
+			log.warn("Schedule {}: {}", scheduleId, details);
+		}
+		return ResponseEntity.ok().build();
 	}
 
 	// Item 16: Get full conversation transcript for a schedule

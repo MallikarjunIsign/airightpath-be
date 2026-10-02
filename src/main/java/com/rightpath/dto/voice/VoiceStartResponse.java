@@ -31,4 +31,18 @@ public class VoiceStartResponse {
 
     /** Turns taken so far, so a resumed screen shows the real position. */
     private int questionsAsked;
+
+    /**
+     * When this interview runs out, as an absolute instant.
+     *
+     * <p>The deadline, not a duration, and the server's rather than the
+     * browser's. The clock was a countdown started at whatever the client
+     * thought the length was, which made it wrong in three ways at once: a
+     * refresh restarted it and handed the candidate a fresh hour; a
+     * backgrounded tab had its timer throttled, so it ran slow; and a laptop
+     * closed and reopened lost the whole sleep. Counting down to a fixed
+     * instant the server chose is immune to all three — and it is the same
+     * instant the server already enforces when it times an interview out.</p>
+     */
+    private java.time.LocalDateTime expiresAt;
 }
