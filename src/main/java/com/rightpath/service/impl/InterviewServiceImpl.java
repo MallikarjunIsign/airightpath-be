@@ -456,7 +456,12 @@ public class InterviewServiceImpl implements InterviewService {
 
 		String blobName = buildBlobName(interviewScheduleId, videoFile.getOriginalFilename());
 
+		// See storeScreenRecording: the presence or absence of this line is how
+		// you tell a rejected request from a failed upload.
+		log.info("Camera recording for schedule {} arrived: {} bytes", interviewScheduleId, videoFile.getSize());
+
 		String videoUrl = storageService.uploadFile(interviewPrefix, blobName, videoFile);
+		log.info("Camera recording for schedule {} stored at {}", interviewScheduleId, videoUrl);
 
 		schedule.setRecordReferences(videoUrl);
 		scheduleRepo.save(schedule);
@@ -477,7 +482,15 @@ public class InterviewServiceImpl implements InterviewService {
 
 		String blobName = buildBlobName(interviewScheduleId, screenFile.getOriginalFilename());
 
+		// Logged on arrival, before storage is attempted. When a recording goes
+		// missing the first question is always whether it reached the server at
+		// all, and the absence of this line answers it — a request rejected by a
+		// proxy for its size never gets here, so nothing is logged and that
+		// silence is itself the diagnosis.
+		log.info("Screen recording for schedule {} arrived: {} bytes", interviewScheduleId, screenFile.getSize());
+
 		String screenUrl = storageService.uploadFile(interviewPrefix, blobName, screenFile);
+		log.info("Screen recording for schedule {} stored at {}", interviewScheduleId, screenUrl);
 
 		// Appended, not replaced. Screen sharing can stop and be picked up
 		// again mid-interview, and each share is uploaded as its own file:
