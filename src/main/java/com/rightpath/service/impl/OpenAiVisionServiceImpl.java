@@ -9,6 +9,8 @@ import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.rightpath.service.OpenAiVisionService;
 
 @Service
@@ -45,24 +47,21 @@ public class OpenAiVisionServiceImpl implements OpenAiVisionService {
 		}
 		""";
 		
-		            String body = """
-		{
-		 "model":"gpt-4o",
-		 "messages":[
-		   {
-		     "role":"user",
-		     "content":[
-		       {"type":"text","text":"%s"},
-		       {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,%s"}}
-		     ]
-		   }
-		 ],
-		 "response_format": { "type": "json_object" },
-		 "max_tokens":300
-		}
-		""".formatted(prompt, base64Image);
-		
-		            HttpHeaders headers = new HttpHeaders();
+		            // Built as a tree, not formatted into a string: the prompt holds
+            // newlines and quotes, and pasting it into a JSON literal produced
+            // a body OpenAI rejected as unparseable.
+            ObjectMapper bodyMapper = new ObjectMapper();
+            ObjectNode root = bodyMapper.createObjectNode();
+            root.put("model", "gpt-4o");
+            root.put("max_tokens", 300);
+            root.putObject("response_format").put("type", "json_object");
+            ArrayNode content = root.putArray("messages").addObject().put("role", "user").putArray("content");
+            content.addObject().put("type", "text").put("text", prompt);
+            content.addObject().put("type", "image_url")
+                    .putObject("image_url").put("url", "data:image/jpeg;base64," + base64Image);
+            String body = bodyMapper.writeValueAsString(root);
+
+            HttpHeaders headers = new HttpHeaders();
 		            headers.setContentType(MediaType.APPLICATION_JSON);
 		            headers.setBearerAuth(apiKey);
 		

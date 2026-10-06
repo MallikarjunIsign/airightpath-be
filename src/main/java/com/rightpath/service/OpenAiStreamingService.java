@@ -34,6 +34,10 @@ import okhttp3.sse.EventSources;
 @Service
 public class OpenAiStreamingService {
 
+    /** Smallest chunk worth sending to Whisper. */
+    private static final int MIN_AUDIO_BYTES = 2000;
+
+
     private static final Logger log = LoggerFactory.getLogger(OpenAiStreamingService.class);
 
     private final OkHttpClient httpClient;
@@ -183,6 +187,14 @@ public class OpenAiStreamingService {
      * Transcribe audio using Whisper API with word-level timestamps.
      */
     public TranscriptionResult transcribe(byte[] audioData, String filename) {
+        // A webm/opus blob this small is a container header with no audio.
+        // Whisper answers it with 400 "audio too short" (or "could not be
+        // decoded"), which was logged as an error for every such chunk.
+        if (audioData == null || audioData.length < MIN_AUDIO_BYTES) {
+            log.debug("Skipping {}: {} bytes is too small to hold audio", filename,
+                    audioData == null ? 0 : audioData.length);
+            return new TranscriptionResult("", 0, Collections.emptyList());
+        }
         try {
             RequestBody fileBody = RequestBody.create(audioData, MediaType.parse("audio/webm"));
 
