@@ -463,7 +463,14 @@ public class InterviewServiceImpl implements InterviewService {
 		String videoUrl = storageService.uploadFile(interviewPrefix, blobName, videoFile);
 		log.info("Camera recording for schedule {} stored at {}", interviewScheduleId, videoUrl);
 
-		schedule.setRecordReferences(videoUrl);
+		// Appended, not replaced, exactly as the screen recording is. The
+		// browser now uploads the camera in parts while the interview runs, so
+		// a tab that is closed or put to sleep loses minutes rather than the
+		// whole hour. Overwriting would keep only the last part and discard
+		// everything uploaded before it.
+		String existing = schedule.getRecordReferences();
+		schedule.setRecordReferences(
+				(existing == null || existing.isBlank()) ? videoUrl : existing + "\n" + videoUrl);
 		scheduleRepo.save(schedule);
 
 		return videoUrl;
