@@ -53,6 +53,17 @@ public final class ProctoringEventSeverity {
 			"recording_upload_failed",
 			"recording_upload_retry",
 			"recording_upload_abandoned",
+			// The recording audit. What the deployment required, and whether
+			// each recording started — the reviewer's answer to "why is there
+			// no recording?". A camera that failed to open or dropped out is
+			// equipment as often as conduct, so these are recorded, not
+			// charged. (A screen share the candidate stops or refuses is
+			// still charged, through screen_share_stopped / _denied.)
+			"recording_policy",
+			"camera_recording_started",
+			"camera_recording_not_started",
+			"camera_recording_issue",
+			"screen_recording_started",
 			// Putting a stopped screen share back is the candidate doing the
 			// right thing. Stopping it already counted; charging them again for
 			// fixing it is a reason not to.
