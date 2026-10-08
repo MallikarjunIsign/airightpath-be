@@ -30,6 +30,13 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 @Entity
+// Only the columns a transaction actually changed are written. By default
+// Hibernate writes every column from the copy it loaded, so a request that
+// held an interview open for a while — a 100 MB recording on its way to S3 —
+// wrote its stale copy of everything else back over whatever had changed
+// meanwhile: the interview's COMPLETED status, its evaluation, the other
+// recording's reference.
+@org.hibernate.annotations.DynamicUpdate
 @Data
 @AllArgsConstructor
 @NoArgsConstructor

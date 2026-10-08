@@ -96,11 +96,13 @@ public class InterviewEvaluationService {
             // results already graded rather than only to the next one. Without
             // this the flag shows on the first read of an interview and is gone
             // on the second, which is worse than never having shown it.
+            InterviewResult resultBefore = schedule.getInterviewResult();
             applyTriage(schedule, cached, cachedEntries);
-            scheduleRepo.save(schedule);
+            persistEvaluation(schedule, resultBefore);
             return cached;
         }
 
+        final InterviewResult resultBefore = schedule.getInterviewResult();
         List<VoiceConversationEntry> entries = entryRepository
                 .findByInterviewScheduleIdOrderByTimestampAsc(scheduleId);
 
@@ -171,7 +173,7 @@ public class InterviewEvaluationService {
             }
         }
 
-        scheduleRepo.save(schedule);
+        persistEvaluation(schedule, resultBefore);
 
         log.info("Generated evaluation for schedule {}: overall score {}, result {}",
                 scheduleId, result.getOverallScore(), schedule.getInterviewResult());
@@ -338,9 +340,37 @@ public class InterviewEvaluationService {
         } catch (Exception e) {
             log.error("Could not store the not-assessable evaluation for schedule {}", schedule.getId(), e);
         }
-        scheduleRepo.save(schedule);
+        persistEvaluation(schedule, schedule.getInterviewResult());
 
         return result;
+    }
+
+    /**
+     * Save what the evaluation produced, and nothing else.
+     *
+     * <p>The schedule was loaded before the model was called and the call takes
+     * a while. Saving that copy back wrote every column as it was at load time,
+     * over whatever had happened in between — the interview's COMPLETED status,
+     * and the recording references uploaded while the model was still thinking.
+     * An interview came back IN PROGRESS with its recordings "saved" and none
+     * attached. The row is read again now and only the three fields this
+     * service owns are written to it.</p>
+     *
+     * @param computed     the copy the evaluation worked on
+     * @param resultBefore the result when it was loaded, so a result the
+     *                     evaluation did not change is not written back stale
+     */
+    private void persistEvaluation(CandidateInterviewSchedule computed, InterviewResult resultBefore) {
+        CandidateInterviewSchedule current = scheduleRepo.findById(computed.getId()).orElse(null);
+        if (current == null) {
+            return;
+        }
+        current.setEvaluationJson(computed.getEvaluationJson());
+        current.setNeedsHumanReview(computed.isNeedsHumanReview());
+        if (computed.getInterviewResult() != resultBefore) {
+            current.setInterviewResult(computed.getInterviewResult());
+        }
+        scheduleRepo.save(current);
     }
 
     private VoiceEvaluationResult parseEvaluation(String json) {

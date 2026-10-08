@@ -1022,8 +1022,20 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         schedule.setCompletionReason(CompletionReason.CANDIDATE_ENDED);
         scheduleRepo.save(schedule);
 
-        // Fire-and-forget async evaluation generation
-        evaluationService.triggerEvaluationAsync(scheduleId);
+        // Fire-and-forget async evaluation generation, once this has committed.
+        // Started from inside the transaction it could read the schedule before
+        // COMPLETED was visible — and then save that older state back.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            evaluationService.triggerEvaluationAsync(scheduleId);
+                        }
+                    });
+        } else {
+            evaluationService.triggerEvaluationAsync(scheduleId);
+        }
 
         log.info("Voice interview {} ended", scheduleId);
     }
