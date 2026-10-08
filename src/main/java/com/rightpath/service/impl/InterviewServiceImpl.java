@@ -443,16 +443,21 @@ public class InterviewServiceImpl implements InterviewService {
 		}
 	}
 
+	// Deliberately not @Transactional. The upload to S3 takes as long as the file
+	// is big, and a transaction around it held a database connection for all of
+	// that and, worse, a copy of the interview row that was stale by the time it
+	// was written back. The row is touched once, afterwards, by a single UPDATE
+	// of the one column.
 	@Override
-	@Transactional
 	public String storeRecording(Long interviewScheduleId, MultipartFile videoFile) {
 
 		if (videoFile == null || videoFile.isEmpty()) {
 			throw new IllegalArgumentException("Video file is required");
 		}
 
-		CandidateInterviewSchedule schedule = scheduleRepo.findById(interviewScheduleId)
-				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
+		if (!scheduleRepo.existsById(interviewScheduleId)) {
+			throw new ResourceNotFoundException("Interview not found");
+		}
 
 		String blobName = buildBlobName(interviewScheduleId, videoFile.getOriginalFilename());
 
@@ -468,24 +473,25 @@ public class InterviewServiceImpl implements InterviewService {
 		// a tab that is closed or put to sleep loses minutes rather than the
 		// whole hour. Overwriting would keep only the last part and discard
 		// everything uploaded before it.
-		String existing = schedule.getRecordReferences();
-		schedule.setRecordReferences(
-				(existing == null || existing.isBlank()) ? videoUrl : existing + "\n" + videoUrl);
-		scheduleRepo.save(schedule);
+		// One UPDATE in the database rather than read, extended and saved: that
+		// read-modify-write is how earlier parts were lost whenever anything else
+		// wrote the row in between.
+		scheduleRepo.appendRecordReference(interviewScheduleId, videoUrl, "\n" + videoUrl);
 
 		return videoUrl;
 	}
 
+	// Not @Transactional, for the reason given on storeRecording.
 	@Override
-	@Transactional
 	public String storeScreenRecording(Long interviewScheduleId, MultipartFile screenFile) {
 
 		if (screenFile == null || screenFile.isEmpty()) {
 			throw new IllegalArgumentException("Screen recording file is required");
 		}
 
-		CandidateInterviewSchedule schedule = scheduleRepo.findById(interviewScheduleId)
-				.orElseThrow(() -> new ResourceNotFoundException("Interview not found"));
+		if (!scheduleRepo.existsById(interviewScheduleId)) {
+			throw new ResourceNotFoundException("Interview not found");
+		}
 
 		String blobName = buildBlobName(interviewScheduleId, screenFile.getOriginalFilename());
 
@@ -509,10 +515,8 @@ public class InterviewServiceImpl implements InterviewService {
 		// Newline-separated because a stored reference is a key built from the
 		// uploaded file's own name, which may contain a comma but cannot
 		// contain a line break.
-		String existing = schedule.getScreenRecordReferences();
-		schedule.setScreenRecordReferences(
-				(existing == null || existing.isBlank()) ? screenUrl : existing + "\n" + screenUrl);
-		scheduleRepo.save(schedule);
+		// One UPDATE in the database, not a read-modify-write of the row.
+		scheduleRepo.appendScreenRecordReference(interviewScheduleId, screenUrl, "\n" + screenUrl);
 
 		return screenUrl;
 	}
