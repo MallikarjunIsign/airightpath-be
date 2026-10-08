@@ -16,7 +16,15 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListPartsRequest;
+import software.amazon.awssdk.services.s3.model.ListPartsResponse;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -162,6 +170,89 @@ public class S3StorageService implements StorageService {
             return String.format("s3://%s/%s", bucketName, key);
         } catch (IOException | S3Exception e) {
             throw new StorageException("Failed to upload file to S3 [bucket=" + bucketName + ", key=" + prefix + "/" + fileName + "]", e);
+        }
+    }
+
+    @Override
+    public String beginMultipartUpload(String prefix, String fileName, String contentType) {
+        validateInputs(prefix, fileName);
+        String key = prefix + "/" + fileName;
+        try {
+            return s3Client.createMultipartUpload(CreateMultipartUploadRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .contentType(contentTypeOf(contentType, key))
+                    .build()).uploadId();
+        } catch (S3Exception e) {
+            throw new StorageException("Failed to start multipart upload [bucket=" + bucketName + ", key=" + key + "]", e);
+        }
+    }
+
+    @Override
+    public void uploadMultipartPart(String prefix, String fileName, String uploadId, int partNumber, byte[] data) {
+        validateInputs(prefix, fileName);
+        if (data == null || data.length == 0) {
+            throw new IllegalArgumentException("A part must not be empty");
+        }
+        String key = prefix + "/" + fileName;
+        try {
+            s3Client.uploadPart(UploadPartRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .uploadId(uploadId)
+                    .partNumber(partNumber)
+                    .contentLength((long) data.length)
+                    .build(), RequestBody.fromBytes(data));
+        } catch (S3Exception e) {
+            throw new StorageException("Failed to upload part " + partNumber + " [bucket=" + bucketName + ", key=" + key + "]", e);
+        }
+    }
+
+    @Override
+    public String completeMultipartUpload(String prefix, String fileName, String uploadId) {
+        validateInputs(prefix, fileName);
+        String key = prefix + "/" + fileName;
+        try {
+            // The pieces are asked of S3 rather than remembered here, so this
+            // works however many pieces were sent, from whichever server
+            // received them, and across a restart in the middle.
+            java.util.List<CompletedPart> completed = new java.util.ArrayList<>();
+            Integer marker = null;
+            ListPartsResponse page;
+            do {
+                page = s3Client.listParts(ListPartsRequest.builder()
+                        .bucket(bucketName).key(key).uploadId(uploadId).partNumberMarker(marker).build());
+                page.parts().forEach(part -> completed.add(
+                        CompletedPart.builder().partNumber(part.partNumber()).eTag(part.eTag()).build()));
+                marker = page.nextPartNumberMarker();
+            } while (Boolean.TRUE.equals(page.isTruncated()));
+
+            if (completed.isEmpty()) {
+                throw new StorageException("No parts were uploaded [bucket=" + bucketName + ", key=" + key + "]", null);
+            }
+            completed.sort(java.util.Comparator.comparingInt(CompletedPart::partNumber));
+
+            s3Client.completeMultipartUpload(CompleteMultipartUploadRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completed).build())
+                    .build());
+            return String.format("s3://%s/%s", bucketName, key);
+        } catch (S3Exception e) {
+            throw new StorageException("Failed to complete multipart upload [bucket=" + bucketName + ", key=" + key + "]", e);
+        }
+    }
+
+    @Override
+    public void abortMultipartUpload(String prefix, String fileName, String uploadId) {
+        validateInputs(prefix, fileName);
+        String key = prefix + "/" + fileName;
+        try {
+            s3Client.abortMultipartUpload(AbortMultipartUploadRequest.builder()
+                    .bucket(bucketName).key(key).uploadId(uploadId).build());
+        } catch (S3Exception e) {
+            log.warn("Could not abort multipart upload [bucket={}, key={}]", bucketName, key, e);
         }
     }
 

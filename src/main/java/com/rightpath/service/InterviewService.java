@@ -25,6 +25,20 @@ public interface InterviewService {
 
 	String storeScreenRecording(Long interviewScheduleId, MultipartFile screenFile);
 
+	/**
+	 * Start sending a recording in pieces.
+	 *
+	 * @param kind {@code camera} or {@code screen}
+	 * @return {@code uploadId} and {@code blobName}, both to be quoted on every later call
+	 */
+	java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind);
+
+	/** Store one piece of a recording that is being sent in pieces. */
+	void uploadRecordingPart(Long interviewScheduleId, String blobName, String uploadId, int part, byte[] data);
+
+	/** Join the pieces, and add the finished recording to the interview's list. */
+	String completeRecordingUpload(Long interviewScheduleId, String kind, String blobName, String uploadId);
+
 	StartInterviewResponse start(String jobPrefix, String email, String resumeSummary);
 
 //	String answer(Long interviewScheduleId, String conversationHistory, boolean finalAnswer, String jobPrefix);

@@ -267,6 +267,32 @@ public class InterviewController {
 		return interviewService.storeScreenRecording(interviewScheduleId, screenFile);
 	}
 
+	// A recording sent in pieces. See StorageService.beginMultipartUpload for why:
+	// a whole recording in one request does not get through whatever sits in
+	// front of the server, and a piece of a few megabytes does.
+	@PostMapping("/{interviewScheduleId}/recording-upload")
+	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
+	public ResponseEntity<Map<String, String>> beginRecordingUpload(@PathVariable Long interviewScheduleId,
+			@RequestParam String kind) {
+		return ResponseEntity.ok(interviewService.beginRecordingUpload(interviewScheduleId, kind));
+	}
+
+	@PostMapping(value = "/{interviewScheduleId}/recording-upload/part", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
+	public ResponseEntity<Void> uploadRecordingPart(@PathVariable Long interviewScheduleId,
+			@RequestParam String uploadId, @RequestParam String blobName, @RequestParam int part,
+			@RequestBody byte[] data) {
+		interviewService.uploadRecordingPart(interviewScheduleId, blobName, uploadId, part, data);
+		return ResponseEntity.ok().build();
+	}
+
+	@PostMapping("/{interviewScheduleId}/recording-upload/complete")
+	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
+	public String completeRecordingUpload(@PathVariable Long interviewScheduleId, @RequestParam String kind,
+			@RequestParam String uploadId, @RequestParam String blobName) {
+		return interviewService.completeRecordingUpload(interviewScheduleId, kind, blobName, uploadId);
+	}
+
 	// ==================== Voice Interview Endpoints ====================
 
 	@PostMapping("/voice/start")

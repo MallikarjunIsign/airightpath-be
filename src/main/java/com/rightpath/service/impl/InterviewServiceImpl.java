@@ -522,6 +522,64 @@ public class InterviewServiceImpl implements InterviewService {
 	}
 
 	@Override
+	public java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind) {
+		if (!scheduleRepo.existsById(interviewScheduleId)) {
+			throw new ResourceNotFoundException("Interview not found");
+		}
+		boolean screen = isScreenKind(kind);
+		String blobName = buildBlobName(interviewScheduleId,
+				(screen ? "screen-" : "interview-") + interviewScheduleId + ".webm");
+		String uploadId = storageService.beginMultipartUpload(interviewPrefix, blobName, "video/webm");
+		log.info("{} recording for schedule {}: piecewise upload started", screen ? "Screen" : "Camera",
+				interviewScheduleId);
+		return java.util.Map.of("uploadId", uploadId, "blobName", blobName);
+	}
+
+	@Override
+	public void uploadRecordingPart(Long interviewScheduleId, String blobName, String uploadId, int part,
+			byte[] data) {
+		requireOwnBlob(interviewScheduleId, blobName);
+		if (part < 1 || part > 10_000) {
+			throw new IllegalArgumentException("Part number out of range");
+		}
+		storageService.uploadMultipartPart(interviewPrefix, blobName, uploadId, part, data);
+	}
+
+	@Override
+	public String completeRecordingUpload(Long interviewScheduleId, String kind, String blobName, String uploadId) {
+		requireOwnBlob(interviewScheduleId, blobName);
+		boolean screen = isScreenKind(kind);
+		String url = storageService.completeMultipartUpload(interviewPrefix, blobName, uploadId);
+		String separator = String.valueOf((char) 10);
+		if (screen) {
+			scheduleRepo.appendScreenRecordReference(interviewScheduleId, url, separator + url);
+		} else {
+			scheduleRepo.appendRecordReference(interviewScheduleId, url, separator + url);
+		}
+		log.info("{} recording for schedule {} stored at {} (piecewise)", screen ? "Screen" : "Camera",
+				interviewScheduleId, url);
+		return url;
+	}
+
+	private static boolean isScreenKind(String kind) {
+		if ("screen".equalsIgnoreCase(kind)) {
+			return true;
+		}
+		if ("camera".equalsIgnoreCase(kind)) {
+			return false;
+		}
+		throw new IllegalArgumentException("kind must be camera or screen");
+	}
+
+	/** The name must be one this interview's own upload produced, so a caller cannot write elsewhere. */
+	private static void requireOwnBlob(Long interviewScheduleId, String blobName) {
+		if (blobName == null || !blobName.startsWith("interview-" + interviewScheduleId + "/")
+				|| blobName.contains("..")) {
+			throw new IllegalArgumentException("Upload does not belong to this interview");
+		}
+	}
+
+	@Override
 	@Deprecated
 	public List<CandidateInterviewSchedule> getResults(String jobPrefix) {
 		return getResults(jobPrefix, null);
