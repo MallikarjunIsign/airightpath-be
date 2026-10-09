@@ -57,6 +57,14 @@ public interface CandidateInterviewScheduleRepository extends JpaRepository<Cand
 			+ "ELSE CONCAT(c.recordReferences, :suffix) END WHERE c.id = :id")
 	int appendRecordReference(@Param("id") Long id, @Param("ref") String ref, @Param("suffix") String suffix);
 
+	/** The same, for the paired phone's recording's parts. */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Transactional
+	@Query("UPDATE CandidateInterviewSchedule c SET c.mobileRecordReferences = "
+			+ "CASE WHEN c.mobileRecordReferences IS NULL OR c.mobileRecordReferences = '' THEN :ref "
+			+ "ELSE CONCAT(c.mobileRecordReferences, :suffix) END WHERE c.id = :id")
+	int appendMobileRecordReference(@Param("id") Long id, @Param("ref") String ref, @Param("suffix") String suffix);
+
 	/** The same, for the shared-screen recording's parts. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Transactional

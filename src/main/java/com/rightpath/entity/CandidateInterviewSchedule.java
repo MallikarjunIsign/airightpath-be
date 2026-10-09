@@ -82,6 +82,15 @@ public class CandidateInterviewSchedule {
 	@Column(columnDefinition = "TEXT")
 	private String screenRecordReferences;
 
+	/**
+	 * The recording of the candidate's paired phone, as a newline-separated
+	 * list of parts like the other two. A new column: {@code ddl-auto: update}
+	 * adds it on its own, and rows from before it exist read as null — no phone
+	 * recording, which is what they have.
+	 */
+	@Column(columnDefinition = "TEXT")
+	private String mobileRecordReferences;
+
 	@Column(name = "summery_references", columnDefinition = "TEXT")
 	private String summaryReferences;
 

@@ -1,7 +1,9 @@
 package com.rightpath.controller;
 
 import com.rightpath.service.AiRoomVerificationService;
+import com.rightpath.service.MobileCaptureService;
 import com.rightpath.service.MobileConnectionService;
+import com.rightpath.service.MobilePairingService;
 import com.rightpath.service.OpenAiVisionService;
 import com.rightpath.service.VoiceInterviewService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,6 +36,32 @@ public class MobileVerificationController {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private MobilePairingService pairingService;
+
+    @Autowired
+    private MobileCaptureService captureService;
+
+    /**
+     * Keep the photo the phone just sent, against the interview its token was
+     * registered for. These were checked and thrown away, so a reviewer had
+     * nothing to look at afterwards.
+     *
+     * <p>Best effort and quiet: a phone whose token was never registered, or a
+     * storage hiccup, must not stop the room check itself from answering.</p>
+     */
+    private void keepPhoto(String token, String kind, MultipartFile photo) {
+        try {
+            var pairing = pairingService.resolveOrNull(token);
+            if (pairing != null) {
+                captureService.saveForPairing(pairing.getInterviewScheduleId(), kind, photo);
+            }
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(MobileVerificationController.class)
+                    .warn("Could not keep a phone photo ({}): {}", kind, e.getMessage());
+        }
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -48,6 +76,7 @@ public class MobileVerificationController {
     @PostMapping("/verify-room")
     public ResponseEntity<Map<String, Object>> verifyRoom(@RequestParam String token,
                                                           @RequestParam("photo") MultipartFile photo) throws IOException {
+        keepPhoto(token, "ROOM_PHOTO", photo);
         AiRoomVerificationService.RoomVerificationResult result =
                 verificationService.verify(photo.getBytes());
 
@@ -62,6 +91,7 @@ public class MobileVerificationController {
     @PostMapping("/monitor")
     public ResponseEntity<Map<String, Object>> monitor(@RequestParam String token,
                                                       @RequestParam("photo") MultipartFile photo) throws IOException {
+        keepPhoto(token, "MONITOR_FRAME", photo);
         String result = openAiVisionService.analyzeRoom(photo.getBytes());
         JsonNode node = objectMapper.readTree(result);
         String status = node.get("status").asText();

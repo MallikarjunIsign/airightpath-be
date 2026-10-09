@@ -32,6 +32,9 @@ public class CandidateInterviewScheduleDTO {
 	 * evidence of how the answer was arrived at.
 	 */
 	private String screenRecordReferences;
+
+	/** The paired phone's recording, one reference per line. */
+	private String mobileRecordReferences;
 	private String summaryReferences;
 	private int warningCount;
 	private String evaluationJson;
@@ -125,6 +128,7 @@ public class CandidateInterviewScheduleDTO {
 		this.deadlineTime = entity.getDeadlineTime();
 		this.recordReferences = entity.getRecordReferences();
 		this.screenRecordReferences = entity.getScreenRecordReferences();
+		this.mobileRecordReferences = entity.getMobileRecordReferences();
 		this.summaryReferences = entity.getSummaryReferences();
 		this.warningCount = entity.getWarningCount();
 		this.evaluationJson = entity.getEvaluationJson();

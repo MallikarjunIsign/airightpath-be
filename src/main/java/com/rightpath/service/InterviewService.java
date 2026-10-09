@@ -33,6 +33,14 @@ public interface InterviewService {
 	 */
 	java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind);
 
+	/**
+	 * As above, naming the video type. A phone's browser may record MP4 rather
+	 * than WebM, and a file stored under the wrong type does not play.
+	 *
+	 * @param contentType {@code video/webm} or {@code video/mp4}; anything else, or null, means WebM
+	 */
+	java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind, String contentType);
+
 	/** Store one piece of a recording that is being sent in pieces. */
 	void uploadRecordingPart(Long interviewScheduleId, String blobName, String uploadId, int part, byte[] data);
 

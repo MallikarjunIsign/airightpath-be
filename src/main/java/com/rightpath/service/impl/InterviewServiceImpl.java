@@ -523,15 +523,24 @@ public class InterviewServiceImpl implements InterviewService {
 
 	@Override
 	public java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind) {
+		return beginRecordingUpload(interviewScheduleId, kind, null);
+	}
+
+	@Override
+	public java.util.Map<String, String> beginRecordingUpload(Long interviewScheduleId, String kind,
+			String contentType) {
 		if (!scheduleRepo.existsById(interviewScheduleId)) {
 			throw new ResourceNotFoundException("Interview not found");
 		}
-		boolean screen = isScreenKind(kind);
-		String blobName = buildBlobName(interviewScheduleId,
-				(screen ? "screen-" : "interview-") + interviewScheduleId + ".webm");
-		String uploadId = storageService.beginMultipartUpload(interviewPrefix, blobName, "video/webm");
-		log.info("{} recording for schedule {}: piecewise upload started", screen ? "Screen" : "Camera",
-				interviewScheduleId);
+		String recordingKind = recordingKindOf(kind);
+		String filePrefix = recordingKind.equals("screen") ? "screen-"
+				: recordingKind.equals("mobile") ? "mobile-" : "interview-";
+		// The extension is what the playback link is typed from, so it has to
+		// match what was recorded. iPhones record MP4; everything else WebM.
+		boolean mp4 = contentType != null && contentType.toLowerCase().startsWith("video/mp4");
+		String blobName = buildBlobName(interviewScheduleId, filePrefix + interviewScheduleId + (mp4 ? ".mp4" : ".webm"));
+		String uploadId = storageService.beginMultipartUpload(interviewPrefix, blobName, mp4 ? "video/mp4" : "video/webm");
+		log.info("{} recording for schedule {}: piecewise upload started", recordingKind, interviewScheduleId);
 		return java.util.Map.of("uploadId", uploadId, "blobName", blobName);
 	}
 
@@ -548,27 +557,30 @@ public class InterviewServiceImpl implements InterviewService {
 	@Override
 	public String completeRecordingUpload(Long interviewScheduleId, String kind, String blobName, String uploadId) {
 		requireOwnBlob(interviewScheduleId, blobName);
-		boolean screen = isScreenKind(kind);
+		String recordingKind = recordingKindOf(kind);
 		String url = storageService.completeMultipartUpload(interviewPrefix, blobName, uploadId);
 		String separator = String.valueOf((char) 10);
-		if (screen) {
-			scheduleRepo.appendScreenRecordReference(interviewScheduleId, url, separator + url);
-		} else {
-			scheduleRepo.appendRecordReference(interviewScheduleId, url, separator + url);
+		switch (recordingKind) {
+		case "screen" -> scheduleRepo.appendScreenRecordReference(interviewScheduleId, url, separator + url);
+		case "mobile" -> scheduleRepo.appendMobileRecordReference(interviewScheduleId, url, separator + url);
+		default -> scheduleRepo.appendRecordReference(interviewScheduleId, url, separator + url);
 		}
-		log.info("{} recording for schedule {} stored at {} (piecewise)", screen ? "Screen" : "Camera",
-				interviewScheduleId, url);
+		log.info("{} recording for schedule {} stored at {} (piecewise)", recordingKind, interviewScheduleId, url);
 		return url;
 	}
 
-	private static boolean isScreenKind(String kind) {
+	/** camera, screen or mobile: whichever the caller named, anything else is refused. */
+	private static String recordingKindOf(String kind) {
 		if ("screen".equalsIgnoreCase(kind)) {
-			return true;
+			return "screen";
 		}
 		if ("camera".equalsIgnoreCase(kind)) {
-			return false;
+			return "camera";
 		}
-		throw new IllegalArgumentException("kind must be camera or screen");
+		if ("mobile".equalsIgnoreCase(kind)) {
+			return "mobile";
+		}
+		throw new IllegalArgumentException("kind must be camera, screen or mobile");
 	}
 
 	/** The name must be one this interview's own upload produced, so a caller cannot write elsewhere. */

@@ -450,14 +450,18 @@ public class InterviewController {
 
 		CandidateInterviewSchedule schedule = interviewService.getResultDetail(scheduleId);
 
-		boolean screen = "screen".equalsIgnoreCase(kind);
-		String stored = screen ? schedule.getScreenRecordReferences() : schedule.getRecordReferences();
+		String recordingKind = "screen".equalsIgnoreCase(kind) ? "screen"
+				: "mobile".equalsIgnoreCase(kind) ? "mobile" : "camera";
+		boolean screen = recordingKind.equals("screen");
+		String stored = screen ? schedule.getScreenRecordReferences()
+				: recordingKind.equals("mobile") ? schedule.getMobileRecordReferences()
+						: schedule.getRecordReferences();
 
 		if (stored == null || stored.isBlank()) {
 			// A 404 rather than an empty 200: "never recorded" is a different
 			// thing from "here is a link to nothing", and the reviewer's screen
 			// says which.
-			throw new com.rightpath.exceptions.ResourceNotFoundException("No " + (screen ? "screen" : "camera")
+			throw new com.rightpath.exceptions.ResourceNotFoundException("No " + recordingKind
 					+ " recording was stored for this interview.");
 		}
 
@@ -473,7 +477,7 @@ public class InterviewController {
 
 		if (part < 0 || part >= references.size()) {
 			throw new com.rightpath.exceptions.ResourceNotFoundException(
-					"This interview has " + references.size() + " " + (screen ? "screen" : "camera")
+					"This interview has " + references.size() + " " + recordingKind
 							+ " recording part(s); part " + (part + 1) + " does not exist.");
 		}
 		String reference = references.get(part);
@@ -485,12 +489,12 @@ public class InterviewController {
 		// genuinely corrupt. One HEAD turns all of that into a straight answer.
 		long sizeBytes = storageService.objectSize(reference)
 				.orElseThrow(() -> new com.rightpath.exceptions.ResourceNotFoundException(
-						"The " + (screen ? "screen" : "camera") + " recording for this interview was not saved. "
+						"The " + recordingKind + " recording for this interview was not saved. "
 								+ "The upload did not complete, so there is nothing to play."));
 
 		if (sizeBytes <= 0) {
 			throw new com.rightpath.exceptions.ResourceNotFoundException(
-					"The " + (screen ? "screen" : "camera") + " recording for this interview is empty. "
+					"The " + recordingKind + " recording for this interview is empty. "
 							+ "The upload started but no data arrived.");
 		}
 
@@ -500,7 +504,7 @@ public class InterviewController {
 
 		String url = "attachment".equalsIgnoreCase(disposition)
 				? storageService.presignedDownloadUrl(reference,
-						"interview-" + scheduleId + "-" + (screen ? "screen" : "camera")
+						"interview-" + scheduleId + "-" + recordingKind
 								+ (references.size() > 1 ? "-part" + (part + 1) : "") + ".webm", ttl)
 				: storageService.presignedUrl(reference, ttl);
 

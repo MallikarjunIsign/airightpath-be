@@ -64,6 +64,10 @@ public final class ProctoringEventSeverity {
 			"camera_recording_not_started",
 			"camera_recording_issue",
 			"screen_recording_started",
+			// The phone's own recording, reported by the phone.
+			"mobile_recording_started",
+			"mobile_recording_not_started",
+			"mobile_recording_issue",
 			// Putting a stopped screen share back is the candidate doing the
 			// right thing. Stopping it already counted; charging them again for
 			// fixing it is a reason not to.
