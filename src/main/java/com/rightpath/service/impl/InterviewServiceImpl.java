@@ -43,6 +43,10 @@ public class InterviewServiceImpl implements InterviewService {
 
 	@Value("${aws.s3.prefix.interview:interview}")
 	private String interviewPrefix;
+
+	/** Every recording upload in flight, so an abandoned one can be finished by the server. */
+	@Autowired
+	private com.rightpath.service.RecordingUploadCoordinator recordingUploads;
 	
 	@Autowired
 	private InterviewQuestionsServiceImpl interviewQuestionsService;
@@ -540,6 +544,7 @@ public class InterviewServiceImpl implements InterviewService {
 		boolean mp4 = contentType != null && contentType.toLowerCase().startsWith("video/mp4");
 		String blobName = buildBlobName(interviewScheduleId, filePrefix + interviewScheduleId + (mp4 ? ".mp4" : ".webm"));
 		String uploadId = storageService.beginMultipartUpload(interviewPrefix, blobName, mp4 ? "video/mp4" : "video/webm");
+		recordingUploads.opened(interviewScheduleId, recordingKind, blobName, uploadId);
 		log.info("{} recording for schedule {}: piecewise upload started", recordingKind, interviewScheduleId);
 		return java.util.Map.of("uploadId", uploadId, "blobName", blobName);
 	}
@@ -551,22 +556,19 @@ public class InterviewServiceImpl implements InterviewService {
 		if (part < 1 || part > 10_000) {
 			throw new IllegalArgumentException("Part number out of range");
 		}
+		// Refused with 410 if the server already finished this upload, so the
+		// browser stops rather than retrying for ever.
+		recordingUploads.requireOpen(uploadId);
 		storageService.uploadMultipartPart(interviewPrefix, blobName, uploadId, part, data);
+		recordingUploads.touched(uploadId);
 	}
 
 	@Override
 	public String completeRecordingUpload(Long interviewScheduleId, String kind, String blobName, String uploadId) {
 		requireOwnBlob(interviewScheduleId, blobName);
-		String recordingKind = recordingKindOf(kind);
-		String url = storageService.completeMultipartUpload(interviewPrefix, blobName, uploadId);
-		String separator = String.valueOf((char) 10);
-		switch (recordingKind) {
-		case "screen" -> scheduleRepo.appendScreenRecordReference(interviewScheduleId, url, separator + url);
-		case "mobile" -> scheduleRepo.appendMobileRecordReference(interviewScheduleId, url, separator + url);
-		default -> scheduleRepo.appendRecordReference(interviewScheduleId, url, separator + url);
-		}
-		log.info("{} recording for schedule {} stored at {} (piecewise)", recordingKind, interviewScheduleId, url);
-		return url;
+		// Joined exactly once, however many times and by whoever asks — the
+		// candidate's browser at the end, or the sweeper if it never came back.
+		return recordingUploads.complete(interviewScheduleId, recordingKindOf(kind), blobName, uploadId);
 	}
 
 	/** camera, screen or mobile: whichever the caller named, anything else is refused. */
