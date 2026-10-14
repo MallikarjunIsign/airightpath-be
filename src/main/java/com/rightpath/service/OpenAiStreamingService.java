@@ -153,6 +153,15 @@ public class OpenAiStreamingService {
      * Non-streaming chat completion for evaluations and summaries.
      */
     public String chatCompletion(List<Map<String, String>> messages) {
+        // Said plainly, once per call. An empty key sends a request OpenAI
+        // refuses, the refusal is swallowed below, and the candidate is told only
+        // that the interviewer "could not be reached" — with nothing in the log
+        // to say the key was never set.
+        if (apiKey == null || apiKey.isBlank()) {
+            log.error("OPENAI_API_KEY is not set: the interviewer cannot be reached. "
+                    + "Set the OPENAI_API_KEY environment variable and restart the backend.");
+            return "";
+        }
         try {
             Map<String, Object> requestBody = new LinkedHashMap<>();
             requestBody.put("model", model);
