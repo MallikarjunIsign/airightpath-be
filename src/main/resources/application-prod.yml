@@ -83,7 +83,7 @@ password:
 
 # JWT Token
 jwt:
-  token: "2v/++UPDcxJ8awevhoGybYEdWlvmwt1GRr1W/SbvgBVqNXzfdtAh8mtOtCucY5TSneWKF6K8XhKTOC3xwrPpUw=="
+  token: "${JWT_TOKEN:2v/++UPDcxJ8awevhoGybYEdWlvmwt1GRr1W/SbvgBVqNXzfdtAh8mtOtCucY5TSneWKF6K8XhKTOC3xwrPpUw==}"
 
 # V2 Auth (Access + Refresh). If secret is empty, falls back to jwt.token.
 rightpath:
@@ -154,7 +154,7 @@ openai:
 # AWS S3 Storage
 aws:
   s3:
-    bucket-name: airightpath-interview
+    bucket-name: ${AWS_S3_BUCKET:airightpath-interview}
     region: ap-south-1
     access-key: ${AWS_ACCESS_KEY:}
     secret-key: ${AWS_SECRET_KEY:}
@@ -175,9 +175,9 @@ management:
 
 app:
   base:
-    url: https://api.airightpath.com
+    url: ${APP_BASE_URL:https://api.airightpath.com}
   cors:
-    allowed-origins: "http://localhost:4200,http://localhost:5173,http://192.168.1.8:5173,https://www.airightpath.com,https://airightpath.com,https://dev.airightpath.com"
+    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost:5173,http://192.168.1.8:5173,https://www.airightpath.com,https://airightpath.com,https://dev.airightpath.com}"
 
   # ── Candidate-facing email branding ────────────────────────────────
   # Every template in EmailServiceImpl reads from here. Held per environment
@@ -190,16 +190,16 @@ app:
   # non-production sender names below are explicit about not being production.
 
   mail:
-    from-name: "RightPath Careers"
-    company-name: "RightPath"
+    from-name: "${APP_MAIL_FROM_NAME:RightPath Careers}"
+    company-name: "${APP_MAIL_COMPANY_NAME:RightPath}"
     # Blank sends replies to spring.mail.username.
-    support-email: ""
-    website: "https://www.airightpath.com"
-    company-address: "ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089"
+    support-email: "${APP_MAIL_SUPPORT_EMAIL:}"
+    website: "${APP_MAIL_WEBSITE:https://www.airightpath.com}"
+    company-address: "${APP_MAIL_COMPANY_ADDRESS:ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089}"
     # Target of the "Start my test" / "Go to my dashboard" buttons.
-    candidate-portal-url: "https://www.airightpath.com"
+    candidate-portal-url: "${APP_MAIL_CANDIDATE_PORTAL_URL:https://www.airightpath.com}"
     # Shown on every on-site test mail, so all three quote one address.
-    test-venue: "ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089"
+    test-venue: "${APP_MAIL_TEST_VENUE:ISIGN TECH PRIVATE LIMITED, 1st floor, Plot No: 2-87/3, Mn Rd, beside Reliance Trends, Sreeramaaramam, Narsingi, Hyderabad, Telangana 500089}"
 
 # Terminal WebSocket Configuration
 terminal:
