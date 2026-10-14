@@ -64,6 +64,11 @@ public class JobApplicationForCandidateController {
 
     // Utility to send real-time WebSocket notifications to a specific user
     private void sendWebSocketNotification(String email, String jobPrefix, String status, String message) {
+        // No template where the controller is built by hand (unit tests use the
+        // two-argument constructor). Nothing to notify through, and not an error.
+        if (messagingTemplate == null) {
+            return;
+        }
         try {
             messagingTemplate.convertAndSendToUser(
                 email, 

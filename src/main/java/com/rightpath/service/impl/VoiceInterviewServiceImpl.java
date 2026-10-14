@@ -383,8 +383,10 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
         String generatedQuestion = openAiStreamingService.chatCompletion(
                 contextService.buildContextMessages(schedule, contextService.buildFirstQuestionPrompt()));
         if (generatedQuestion == null || generatedQuestion.isBlank()) {
+            String why = openAiStreamingService.lastChatFailure();
             throw new IllegalStateException(
-                    "The interviewer could not be reached to start this interview. Please try again.");
+                    "The interviewer could not be reached to start this interview. Please try again."
+                            + (why == null ? "" : " (" + why + ")"));
         }
 
         // Control tags off before anything else touches the text, so the

@@ -152,7 +152,20 @@ public class OpenAiStreamingService {
     /**
      * Non-streaming chat completion for evaluations and summaries.
      */
+    /**
+     * Why the most recent chat completion failed, in a line safe to show: the
+     * status and OpenAI's own error code, never the key or the request. The
+     * caller turns an empty reply into "could not be reached", which hid
+     * whether that was a missing key, no quota or an unavailable model.
+     */
+    private volatile String lastChatFailure = null;
+
+    public String lastChatFailure() {
+        return lastChatFailure;
+    }
+
     public String chatCompletion(List<Map<String, String>> messages) {
+        lastChatFailure = null;
         // Said plainly, once per call. An empty key sends a request OpenAI
         // refuses, the refusal is swallowed below, and the candidate is told only
         // that the interviewer "could not be reached" — with nothing in the log
@@ -160,6 +173,7 @@ public class OpenAiStreamingService {
         if (apiKey == null || apiKey.isBlank()) {
             log.error("OPENAI_API_KEY is not set: the interviewer cannot be reached. "
                     + "Set the OPENAI_API_KEY environment variable and restart the backend.");
+            lastChatFailure = "the OpenAI key is not set on the server";
             return "";
         }
         try {
@@ -181,6 +195,13 @@ public class OpenAiStreamingService {
                 String responseBody = response.body().string();
                 if (!response.isSuccessful()) {
                     log.error("Chat completion failed: {} {} — {}", response.code(), response.message(), responseBody);
+                    String code = "";
+                    try {
+                        code = objectMapper.readTree(responseBody).path("error").path("code").asText("");
+                    } catch (Exception ignored) {
+                        // Not JSON; the status alone will do.
+                    }
+                    lastChatFailure = "OpenAI answered " + response.code() + (code.isBlank() ? "" : " (" + code + ")");
                     return "";
                 }
                 JsonNode node = objectMapper.readTree(responseBody);
@@ -188,6 +209,7 @@ public class OpenAiStreamingService {
             }
         } catch (Exception e) {
             log.error("Error in chat completion", e);
+            lastChatFailure = "the request to OpenAI failed (" + e.getClass().getSimpleName() + ")";
             return "";
         }
     }
