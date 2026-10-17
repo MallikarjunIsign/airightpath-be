@@ -41,4 +41,19 @@ public class MobileConnectionServiceImpl  implements MobileConnectionService {
         tokenToDesktopSession.remove(token);
         tokenToMobileSession.remove(token);
     }
+
+    @Override
+    public String releaseMobileSession(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : tokenToMobileSession.entrySet()) {
+            // remove(key, value): a phone that already reconnected under a new
+            // session keeps its registration.
+            if (sessionId.equals(entry.getValue()) && tokenToMobileSession.remove(entry.getKey(), sessionId)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
 }

@@ -14,6 +14,9 @@ public interface VoiceInterviewService {
 
     void endVoiceInterview(Long scheduleId);
 
+    /** Ends the interview for a reason other than the candidate pressing end. No-op if already over. */
+    void endVoiceInterview(Long scheduleId, com.rightpath.enums.CompletionReason reason);
+
     boolean handleWarning(Long scheduleId);
 
     VoiceSessionStatus getSessionStatus(Long scheduleId);

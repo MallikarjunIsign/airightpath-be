@@ -10,6 +10,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.rightpath.entity.InterviewRecordingUpload;
+import com.rightpath.enums.AttemptStatus;
+import com.rightpath.repository.CandidateInterviewScheduleRepository;
 import com.rightpath.repository.InterviewRecordingUploadRepository;
 
 /**
@@ -41,18 +43,23 @@ public class RecordingUploadSweeper {
     private final InterviewRecordingUploadRepository uploads;
     private final RecordingUploadCoordinator coordinator;
     private final StorageService storageService;
+    private final CandidateInterviewScheduleRepository scheduleRepo;
+
+    /** After the interview is over, a recording this quiet has had its last piece. */
+    private static final long FINISHED_QUIET_MINUTES = 2;
 
     @Value("${aws.s3.prefix.interview:interview}")
     private String interviewPrefix;
 
     public RecordingUploadSweeper(InterviewRecordingUploadRepository uploads, RecordingUploadCoordinator coordinator,
-            StorageService storageService) {
+            StorageService storageService, CandidateInterviewScheduleRepository scheduleRepo) {
+        this.scheduleRepo = scheduleRepo;
         this.uploads = uploads;
         this.coordinator = coordinator;
         this.storageService = storageService;
     }
 
-    @Scheduled(fixedDelay = 5 * 60 * 1000, initialDelay = 2 * 60 * 1000)
+    @Scheduled(fixedDelay = 60 * 1000, initialDelay = 2 * 60 * 1000)
     public void sweep() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         LocalDateTime cutoff = now.minusMinutes(QUIET_FOR_MINUTES);
@@ -65,8 +72,22 @@ public class RecordingUploadSweeper {
                     stuck.getKind());
         }
 
-        for (InterviewRecordingUpload quiet : uploads.findByStatusAndLastActivityAtBefore(
-                InterviewRecordingUpload.OPEN, cutoff)) {
+        // An interview that is over and a recording that has gone quiet for a
+        // couple of minutes: the last piece is in. Joined now, so the reviewer
+        // has the phone's full recording right after submit, not half an hour on.
+        LocalDateTime finishedCutoff = now.minusMinutes(FINISHED_QUIET_MINUTES);
+        java.util.List<InterviewRecordingUpload> toJoin = new java.util.ArrayList<>(
+                uploads.findByStatusAndLastActivityAtBefore(InterviewRecordingUpload.OPEN, cutoff));
+        for (InterviewRecordingUpload candidate : uploads.findByStatusAndLastActivityAtBefore(
+                InterviewRecordingUpload.OPEN, finishedCutoff)) {
+            boolean over = scheduleRepo.findById(candidate.getInterviewScheduleId())
+                    .map(sch -> sch.getAttemptStatus() == AttemptStatus.COMPLETED).orElse(false);
+            if (over && toJoin.stream().noneMatch(u -> u.getId().equals(candidate.getId()))) {
+                toJoin.add(candidate);
+            }
+        }
+
+        for (InterviewRecordingUpload quiet : toJoin) {
             try {
                 if (quiet.getPartsReceived() == 0) {
                     storageService.abortMultipartUpload(interviewPrefix, quiet.getBlobName(), quiet.getUploadId());

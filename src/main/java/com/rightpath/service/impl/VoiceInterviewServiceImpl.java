@@ -1056,12 +1056,22 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
     @Override
     @Transactional
     public void endVoiceInterview(Long scheduleId) {
+        endVoiceInterview(scheduleId, CompletionReason.CANDIDATE_ENDED);
+    }
+
+    @Override
+    @Transactional
+    public void endVoiceInterview(Long scheduleId, CompletionReason reason) {
         CandidateInterviewSchedule schedule = scheduleRepo.findById(scheduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule not found: " + scheduleId));
 
+        if (reason != CompletionReason.CANDIDATE_ENDED && schedule.getAttemptStatus() == AttemptStatus.COMPLETED) {
+            return;
+        }
+
         schedule.setAttemptStatus(AttemptStatus.COMPLETED);
         schedule.setEndedAt(LocalDateTime.now());
-        schedule.setCompletionReason(CompletionReason.CANDIDATE_ENDED);
+        schedule.setCompletionReason(reason);
         scheduleRepo.save(schedule);
 
         // Fire-and-forget async evaluation generation, once this has committed.
