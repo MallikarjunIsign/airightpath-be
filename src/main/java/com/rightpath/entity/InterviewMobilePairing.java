@@ -51,6 +51,15 @@ public class InterviewMobilePairing {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Set when the candidate started the interview without a phone. From then on
+     * the token is refused everywhere, so a phone cannot be scanned in after the
+     * interview has begun in single-camera mode and turn it into a dual-camera one
+     * half way through. Nullable so rows from before this existed read as open.
+     */
+    @Column(name = "revoked")
+    private Boolean revoked;
+
     /** Recording bytes accepted so far, so a token cannot be used to fill the bucket. */
     @Column(name = "bytes_received", nullable = false)
     @Builder.Default

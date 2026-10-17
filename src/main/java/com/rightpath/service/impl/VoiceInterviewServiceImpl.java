@@ -351,6 +351,19 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
                     .build();
         }
 
+        // A new interview needs the date and time it was assigned with, and the window
+        // that gives. An interview booked with none, before it was mandatory, would
+        // otherwise start with no schedule to measure it against, and one whose
+        // deadline has passed would start as though it had not.
+        if (schedule.getDeadlineTime() == null) {
+            throw new IllegalStateException(
+                    "This interview has no date and time set. Ask the recruiter to assign it again.");
+        }
+        if (schedule.getDeadlineTime().isBefore(LocalDateTime.now())) {
+            throw new IllegalStateException(
+                    "The time allowed for this interview has passed. Ask the recruiter to schedule it again.");
+        }
+
         // Start a new interview
         schedule.setAttemptStatus(AttemptStatus.IN_PROGRESS);
         schedule.setStartedAt(LocalDateTime.now());
@@ -828,6 +841,33 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
      * future. Falls back to the current time for a row with no start recorded,
      * which cannot be placed any better.</p>
      */
+    /**
+     * When a timed-out interview actually stopped: the last thing said in it, when
+     * that is earlier than the time limit.
+     *
+     * <p>A candidate who closed the tab after twenty minutes was recorded as having
+     * sat the full sixty, because the limit was used as the end. That made
+     * "time in interview" the length of the allowance rather than the length of the
+     * interview. The limit is still the ceiling: nothing can have gone on past it.</p>
+     */
+    private LocalDateTime endOfActivity(CandidateInterviewSchedule schedule) {
+        LocalDateTime limit = expiryOf(schedule);
+        try {
+            List<VoiceConversationEntry> entries =
+                    entryRepository.findByInterviewScheduleIdOrderByTimestampAsc(schedule.getId());
+            if (!entries.isEmpty()) {
+                LocalDateTime last = entries.get(entries.size() - 1).getTimestamp();
+                if (last != null && schedule.getStartedAt() != null
+                        && !last.isBefore(schedule.getStartedAt()) && last.isBefore(limit)) {
+                    return last;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not read the last activity of interview {}; using the time limit", schedule.getId(), e);
+        }
+        return limit;
+    }
+
     private LocalDateTime expiryOf(CandidateInterviewSchedule schedule) {
         LocalDateTime startedAt = schedule.getStartedAt();
         return startedAt == null ? LocalDateTime.now() : startedAt.plusMinutes(maxDurationMinutes);
@@ -1123,7 +1163,7 @@ public class VoiceInterviewServiceImpl implements VoiceInterviewService {
             // read as "time in interview" on the result screen and summed
             // across sittings, so a single stale row made the whole candidate
             // look absurd.
-            schedule.setEndedAt(expiryOf(schedule));
+            schedule.setEndedAt(endOfActivity(schedule));
             schedule.setCompletionReason(CompletionReason.TIMEOUT);
             scheduleRepo.save(schedule);
 

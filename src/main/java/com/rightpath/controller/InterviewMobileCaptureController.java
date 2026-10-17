@@ -51,6 +51,15 @@ public class InterviewMobileCaptureController {
 		return ResponseEntity.ok().build();
 	}
 
+	/** The candidate is starting without a phone: close pairing for this interview. */
+	@PostMapping("/{interviewScheduleId}/mobile-pairing/revoke")
+	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
+	public ResponseEntity<Void> revokePairing(@PathVariable Long interviewScheduleId,
+			@RequestParam(required = false) String token, Authentication authentication) {
+		mobilePairingService.revoke(interviewScheduleId, authentication.getName(), token);
+		return ResponseEntity.ok().build();
+	}
+
 	@PostMapping(value = "/{interviewScheduleId}/mobile-captures", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@PreAuthorize("hasAuthority('INTERVIEW_ANSWER')")
 	public ResponseEntity<MobileCaptureDto> upload(@PathVariable Long interviewScheduleId,

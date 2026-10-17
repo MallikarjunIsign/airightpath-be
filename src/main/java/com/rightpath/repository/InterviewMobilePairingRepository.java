@@ -10,6 +10,8 @@ import com.rightpath.entity.InterviewMobilePairing;
 
 public interface InterviewMobilePairingRepository extends JpaRepository<InterviewMobilePairing, String> {
 
+	java.util.List<InterviewMobilePairing> findByInterviewScheduleId(Long interviewScheduleId);
+
 	/** Counted in one UPDATE, so two pieces arriving together are both counted. */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Transactional

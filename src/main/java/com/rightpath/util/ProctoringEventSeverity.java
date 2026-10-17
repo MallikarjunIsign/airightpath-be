@@ -64,6 +64,8 @@ public final class ProctoringEventSeverity {
 			"camera_recording_not_started",
 			"camera_recording_issue",
 			"screen_recording_started",
+			// More than one display: recorded for the reviewer, never charged.
+			"multiple_displays",
 			// The phone's own recording, reported by the phone.
 			"mobile_recording_started",
 			"mobile_recording_not_started",

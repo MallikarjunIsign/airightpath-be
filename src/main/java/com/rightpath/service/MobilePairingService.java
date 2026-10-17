@@ -72,7 +72,16 @@ public class MobilePairingService {
                 // A token already tied to a different interview is never moved.
                 throw new AccessDeniedException("This pairing token belongs to another interview");
             }
+            if (Boolean.TRUE.equals(existing.getRevoked())) {
+                throw new AccessDeniedException("Phone pairing is closed for this interview");
+            }
             return;
+        }
+        // A new pairing can only be opened before the interview starts. After that the
+        // proctoring set-up is what it began as; a page reloaded mid-interview makes a
+        // fresh token, and that must not be a way to bring a phone in late.
+        if (schedule.getAttemptStatus() != com.rightpath.enums.AttemptStatus.NOT_ATTEMPTED) {
+            throw new AccessDeniedException("Phone pairing is closed once the interview has started");
         }
         pairingRepository.save(InterviewMobilePairing.builder()
                 .token(token)
@@ -83,9 +92,51 @@ public class MobilePairingService {
         log.info("Phone pairing registered for interview {}", scheduleId);
     }
 
+    /**
+     * Close phone pairing for this interview: the candidate has chosen to go ahead without one.
+     *
+     * <p>Every token already registered for the interview is revoked, and the one named is
+     * recorded as revoked even if it was never registered, so a phone that scans that QR
+     * code afterwards is told pairing is closed rather than "not found".</p>
+     */
+    public void revoke(Long scheduleId, String actorEmail, String token) {
+        CandidateInterviewSchedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Interview schedule not found: " + scheduleId));
+        if (actorEmail == null || actorEmail.isBlank() || schedule.getEmail() == null
+                || !schedule.getEmail().equalsIgnoreCase(actorEmail)) {
+            throw new AccessDeniedException("Interview " + scheduleId + " is not assigned to the authenticated candidate");
+        }
+        for (InterviewMobilePairing pairing : pairingRepository.findByInterviewScheduleId(scheduleId)) {
+            pairing.setRevoked(true);
+            pairingRepository.save(pairing);
+        }
+        if (token != null && TOKEN_SHAPE.matcher(token).matches() && !pairingRepository.existsById(token)) {
+            pairingRepository.save(InterviewMobilePairing.builder()
+                    .token(token)
+                    .interviewScheduleId(scheduleId)
+                    .candidateEmail(schedule.getEmail())
+                    .createdAt(LocalDateTime.now(ZoneOffset.UTC))
+                    .revoked(true)
+                    .build());
+        }
+        log.info("Phone pairing closed for interview {}: started without a phone", scheduleId);
+    }
+
+    /** open, closed or unknown: what a phone is told about its token before it opens the camera. */
+    public String state(String token) {
+        InterviewMobilePairing pairing = token == null ? null : pairingRepository.findById(token).orElse(null);
+        if (pairing == null) {
+            return "unknown";
+        }
+        return Boolean.TRUE.equals(pairing.getRevoked()) ? "closed" : "open";
+    }
+
     /** The pairing a token stands for, or a refusal. Unknown and expired look the same to the caller. */
     public InterviewMobilePairing resolve(String token) {
         InterviewMobilePairing pairing = token == null ? null : pairingRepository.findById(token).orElse(null);
+        if (pairing != null && Boolean.TRUE.equals(pairing.getRevoked())) {
+            throw new AccessDeniedException("Phone pairing is closed for this interview");
+        }
         if (pairing == null
                 || pairing.getCreatedAt().plus(VALID_FOR).isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
             throw new AccessDeniedException("This phone is not paired with an interview");

@@ -295,6 +295,8 @@ public class InterviewServiceImpl implements InterviewService {
 	public CandidateInterviewSchedule assignInterview(String jobPrefix, String email, LocalDateTime assignedAt,
 	        LocalDateTime deadlineTime, LocalDate questionsFromDate, LocalDate questionsToDate) {
 
+	    requireDeadline(deadlineTime);
+
 	    JobApplicationForCandidate application = jobAppRepo.findByJobPost_JobPrefixAndUser_Email(jobPrefix, email)
 	            .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
 
@@ -317,6 +319,17 @@ public class InterviewServiceImpl implements InterviewService {
 
 	
 	
+	/**
+	 * An interview without a date and time has no deadline: it never expires, never
+	 * chases the candidate, and cannot be tracked. The scheduling screens ask for it,
+	 * but nothing on the server stopped a request that left it out.
+	 */
+	private static void requireDeadline(LocalDateTime deadlineTime) {
+		if (deadlineTime == null) {
+			throw new IllegalArgumentException("Date and time is required to assign an interview");
+		}
+	}
+
 	@Override
 	public List<CandidateInterviewSchedule> getActiveInterviewsByEmail(String email) {
 		return scheduleRepo.findActiveInterviewsByEmail(email);
@@ -340,6 +353,7 @@ public class InterviewServiceImpl implements InterviewService {
 	    if (emails == null || emails.isEmpty()) {
 	        throw new IllegalArgumentException("emails must be provided");
 	    }
+	    requireDeadline(deadlineTime);
 
 	    List<CandidateInterviewSchedule> schedules = new ArrayList<>();
 	    // Kept so the invitation can address the candidate by name and quote the

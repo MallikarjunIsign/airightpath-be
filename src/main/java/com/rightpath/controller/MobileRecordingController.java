@@ -42,6 +42,12 @@ public class MobileRecordingController {
 		this.interviewService = interviewService;
 	}
 
+	/** Whether this phone may still join: open, closed (the interview began without one) or unknown. */
+	@org.springframework.web.bind.annotation.GetMapping("/pairing-status")
+	public ResponseEntity<Map<String, String>> pairingStatus(@RequestParam String token) {
+		return ResponseEntity.ok(Map.of("state", pairingService.state(token)));
+	}
+
 	@PostMapping("/recording-upload")
 	public ResponseEntity<Map<String, String>> begin(@RequestParam String token,
 			@RequestParam(required = false) String type) {
