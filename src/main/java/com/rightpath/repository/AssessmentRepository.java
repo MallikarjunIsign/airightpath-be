@@ -47,6 +47,19 @@ public interface AssessmentRepository extends JpaRepository<Assessment, Long> {
      * @apiNote Used by scheduled expiry jobs
      * @see Assessment#expired
      */
+    /**
+     * Where each assessment's question paper lives, without loading the paper.
+     *
+     * <p>The entity carries the paper (TEXT) and the answer key (a LOB); reading every
+     * assessment whole to learn which candidate got which file would pull all of it
+     * through the connection. This is the handful of columns the question bank needs
+     * to find each paper and attribute it.</p>
+     */
+    @Query("SELECT a.id AS id, a.candidateEmail AS candidateEmail, a.jobPrefix AS jobPrefix, "
+            + "a.assessmentType AS assessmentType, a.assignedAt AS assignedAt, a.uploadedBy AS uploadedBy, "
+            + "a.containerName AS containerName, a.fileName AS fileName FROM Assessment a")
+    List<AssessmentPaperRef> findPaperRefs();
+
     @Query("SELECT a FROM Assessment a WHERE a.deadline < CURRENT_TIMESTAMP AND a.expired = false")
     List<Assessment> findExpiredAssessments();
 

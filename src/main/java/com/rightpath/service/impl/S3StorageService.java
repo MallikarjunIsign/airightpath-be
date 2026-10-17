@@ -22,6 +22,7 @@ import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListPartsRequest;
 import software.amazon.awssdk.services.s3.model.ListPartsResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
@@ -351,6 +352,28 @@ public class S3StorageService implements StorageService {
         }
     }
     
+    @Override
+    public java.util.List<String> listFileNames(String prefix) {
+        if (prefix == null || prefix.isBlank()) {
+            throw new IllegalArgumentException("Container name must not be empty");
+        }
+        String start = prefix.endsWith("/") ? prefix : prefix + "/";
+        try {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            s3Client.listObjectsV2Paginator(ListObjectsV2Request.builder().bucket(bucketName).prefix(start).build())
+                    .contents()
+                    .forEach(object -> {
+                        String name = object.key().substring(start.length());
+                        if (!name.isEmpty() && !name.endsWith("/")) {
+                            names.add(name);
+                        }
+                    });
+            return names;
+        } catch (S3Exception e) {
+            throw new StorageException("Failed to list files in S3 [bucket=" + bucketName + ", prefix=" + start + "]", e);
+        }
+    }
+
     @Override
     public void uploadStringContent(String prefix, String fileName, String content) {
         validateInputs(prefix, fileName);

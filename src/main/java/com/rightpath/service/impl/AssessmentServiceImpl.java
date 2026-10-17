@@ -57,6 +57,9 @@ public class AssessmentServiceImpl implements AssessmentService {
 	private final AssessmentRepository assessmentRepository;
 	private final StorageService storageService;
 
+	@Autowired
+	private com.rightpath.service.QuestionBankTracker questionBankTracker;
+
 	private JobApplicationForCandidateRepository jobApplicationRepository;
 
 	@Autowired
@@ -463,6 +466,34 @@ public class AssessmentServiceImpl implements AssessmentService {
 		}
 	}
 
+	private static String paperText(org.springframework.web.multipart.MultipartFile file) {
+		try {
+			return file == null || file.isEmpty() ? null : new String(file.getBytes(), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Record which questions this candidate was given.
+	 *
+	 * <p>Bookkeeping, and deliberately never allowed to fail the assignment: the candidate has been
+	 * given their exam, and a problem writing the question log is something to see in the logs, not a
+	 * reason to roll the exam back.</p>
+	 */
+	private void trackQuestions(String jobPrefix, AssessmentType type, String paper, Assessment assessment) {
+		if (paper == null) {
+			return;
+		}
+		try {
+			questionBankTracker.recordAssignment(jobPrefix, type, paper, assessment.getId(),
+					assessment.getCandidateEmail(), assessment.getAssignedAt(), assessment.getUploadedBy());
+		} catch (Exception e) {
+			logger.error("Could not record the {} questions given to {} for {} in the question bank", type,
+					assessment.getCandidateEmail(), jobPrefix, e);
+		}
+	}
+
 	/**
 	 * Assigns an assessment to multiple candidates and emails them their exam link.
 	 *
@@ -480,6 +511,9 @@ public class AssessmentServiceImpl implements AssessmentService {
 	@Override
 	public AssignmentReportDTO assignAssessment(AssignAssessmentDto dto, String jobPrefix) {
 		AssignmentReportDTO report = new AssignmentReportDTO();
+		// Read once: it is the same paper for every candidate, and what is recorded is what each was given.
+		String aptitudePaper = paperText(dto.getAptitudeQuestionPaper());
+		String codingPaper = paperText(dto.getCodingQuestionPaper());
 		for (String email : dto.getCandidateEmails()) {
 			// Process Aptitude Assessment
 			if (dto.getAptitudeQuestionPaper() != null && !dto.getAptitudeQuestionPaper().isEmpty()) {
@@ -510,6 +544,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 					}
 				}
 				assessmentRepository.save(aptitudeAssessment);
+				trackQuestions(jobPrefix, AssessmentType.APTITUDE, aptitudePaper, aptitudeAssessment);
 			}
 
 			// Process Coding Assessment (without answer key)
@@ -533,6 +568,7 @@ public class AssessmentServiceImpl implements AssessmentService {
 				codingAssessment.setEstimatedDurationMinutes(dto.getCodingEstimatedDurationMinutes());
 				codingAssessment.setPassPercentage(passMarkOrDefault(dto.getCodingPassPercentage()));
 				assessmentRepository.save(codingAssessment);
+				trackQuestions(jobPrefix, AssessmentType.CODING, codingPaper, codingAssessment);
 			}
 
 			// Notify, then record the result. EXAM_SENT is only set once the mail has

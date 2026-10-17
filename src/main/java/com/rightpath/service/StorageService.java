@@ -12,6 +12,9 @@ public interface StorageService {
 
 	boolean fileExists(String containerName, String fileName);
 
+	/** Names (without the prefix) of every object stored under a prefix. */
+	java.util.List<String> listFileNames(String prefix);
+
 	void uploadStringContent(String prefix, String fileName, String content);
 
 	/**
