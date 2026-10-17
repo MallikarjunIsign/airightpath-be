@@ -66,6 +66,8 @@ public final class ProctoringEventSeverity {
 			"screen_recording_started",
 			// More than one display: recorded for the reviewer, never charged.
 			"multiple_displays",
+			// What the browser did to the microphone. A fact about the device, never conduct.
+			"mic_processing",
 			// The phone's own recording, reported by the phone.
 			"mobile_recording_started",
 			"mobile_recording_not_started",
